@@ -1,0 +1,77 @@
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@200;300;400;600;800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root{
+  font-family: 'Poppins', sans-serif;
+}
+
+body{
+  background: white;
+  cursor: pointer;
+}
+
+li{
+  list-style: none;
+  cursor: pointer;
+  position: relative;
+}
+
+/* Active state for list items */
+li.active{
+  color: #2a68ff;
+}
+
+/* Underline hover effect for all menu items */
+.menuList:hover::before{
+  position: absolute;
+  content: '';
+  height: 4px;
+  width: 100%;
+  background: #2a68ff;
+  right: 0;
+  bottom: -10px;
+  color: #2a68ff;
+}
+
+/* Persistent underline for active menu items */
+.menuList.active::before{
+  position: absolute;
+  content: '';
+  height: 4px;
+  width: 100%;
+  background: #2a68ff;
+  right: 0;
+  bottom: -10px;
+}
+
+/* Special styling for the active menu item's text */
+.menuList.active a {
+  color: #2a68ff;
+  font-weight: 600;
+}
+
+.icon{
+  cursor: pointer;
+}
+
+.card{
+  background: url(/src/Assets/testimonial-bg.png);
+}
+
+/* Categories page specific styles */
+.category-badge {
+  transition: all 0.3s ease;
+}
+
+.category-button {
+  transition: all 0.3s ease;
+}
+
+.category-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+}
+
