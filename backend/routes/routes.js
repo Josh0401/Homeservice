@@ -5,11 +5,13 @@ const router = express.Router();
 const authRoutes = require('./auth'); // Adjust path as needed
 const categoryRoutes = require('./category'); // Adjust path as needed
 const serviceRoutes = require('./service'); // Adjust path as needed
+const bookingRoutes = require('./booking'); // Adjust path as needed
 
 // Use routes
 router.use('/api/auth', authRoutes);
 router.use('/api/categories', categoryRoutes);
 router.use('/api/services', serviceRoutes);
+router.use('/api/bookings', bookingRoutes);
 
 // Health check route
 router.get('/api/health', (req, res) => {
