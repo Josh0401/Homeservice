@@ -2,11 +2,13 @@ import React, { useState, useRef, useEffect } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { useNotifications } from '../../context/NotificationsContext'
-import { FaUser, FaSignOutAlt, FaBell, FaCheckCircle, FaCalendarCheck, FaTools, FaTag, FaClock, FaBars, FaTimes } from "react-icons/fa";
+import { useLanguage, languages } from '../../context/LanguageContext' // Import language context and languages array
+import { FaUser, FaSignOutAlt, FaBell, FaCheckCircle, FaCalendarCheck, FaTools, FaTag, FaClock, FaBars, FaTimes, FaGlobe } from "react-icons/fa";
 
 const NavBar = () => {
   const { isAuthenticated, user, logout } = useAuth();
   const { notifications, unreadCount, markAsRead, markAllAsRead } = useNotifications();
+  const { language, setLanguage, t } = useLanguage(); // Use the language context
   const navigate = useNavigate();
   const location = useLocation();
   const currentPath = location.pathname;
@@ -18,6 +20,10 @@ const NavBar = () => {
   // State for mobile menu
   const [showMobileMenu, setShowMobileMenu] = useState(false);
   const mobileMenuRef = useRef(null);
+
+  // State for language selector
+  const [showLanguageSelector, setShowLanguageSelector] = useState(false);
+  const languageSelectorRef = useRef(null);
   
   // Get icon component based on icon name
   const getIconComponent = (iconName) => {
@@ -41,6 +47,16 @@ const NavBar = () => {
   const toggleNotifications = (e) => {
     e.stopPropagation();
     setShowNotifications(!showNotifications);
+    // Close other dropdowns
+    setShowLanguageSelector(false);
+  };
+  
+  // Toggle language selector
+  const toggleLanguageSelector = (e) => {
+    e.stopPropagation();
+    setShowLanguageSelector(!showLanguageSelector);
+    // Close other dropdowns
+    setShowNotifications(false);
   };
   
   // Toggle mobile menu
@@ -53,11 +69,21 @@ const NavBar = () => {
     setShowMobileMenu(false);
   };
   
-  // Handle clicks outside of the notification dropdown
+  // Change language
+  const changeLanguage = (code) => {
+    setLanguage(code);
+    setShowLanguageSelector(false);
+  };
+  
+  // Handle clicks outside of the dropdowns
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (notificationRef.current && !notificationRef.current.contains(event.target)) {
         setShowNotifications(false);
+      }
+      
+      if (languageSelectorRef.current && !languageSelectorRef.current.contains(event.target)) {
+        setShowLanguageSelector(false);
       }
       
       if (mobileMenuRef.current && !mobileMenuRef.current.contains(event.target)) {
@@ -66,7 +92,7 @@ const NavBar = () => {
     };
 
     // Add event listener when dropdown or mobile menu is shown
-    if (showNotifications || showMobileMenu) {
+    if (showNotifications || showMobileMenu || showLanguageSelector) {
       document.addEventListener('mousedown', handleClickOutside);
     }
     
@@ -74,7 +100,7 @@ const NavBar = () => {
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
-  }, [showNotifications, showMobileMenu]);
+  }, [showNotifications, showMobileMenu, showLanguageSelector]);
   
   // Handle marking all as read
   const handleMarkAllAsRead = (e) => {
@@ -130,7 +156,7 @@ const NavBar = () => {
                       className={`${currentPath === '/dashboard' ? 'text-blueColor font-bold' : 'text-[#6f6f6f]'} hover:text-blueColor no-underline flex items-center gap-1`}
                       onClick={closeMobileMenu}
                     >
-                     Dashboard
+                     {t.dashboard}
                     </Link>
                 </li>
                 
@@ -140,7 +166,7 @@ const NavBar = () => {
                       className={`${currentPath === '/booking' ? 'text-blueColor font-bold' : 'text-[#6f6f6f]'} hover:text-blueColor no-underline flex items-center gap-1`}
                       onClick={closeMobileMenu}
                     >
-                     Bookings
+                     {t.bookings || 'Bookings'}
                     </Link>
                 </li>
                 
@@ -150,7 +176,7 @@ const NavBar = () => {
                       className={`${currentPath === '/' ? 'text-blueColor font-bold' : 'text-[#6f6f6f]'} hover:text-blueColor no-underline`}
                       onClick={closeMobileMenu}
                     >
-                      Services
+                      {t.services || 'Services'}
                     </Link>
                 </li>
                 
@@ -160,7 +186,7 @@ const NavBar = () => {
                       className={`${currentPath === '/categories' ? 'text-blueColor font-bold' : 'text-[#6f6f6f]'} hover:text-blueColor no-underline`}
                       onClick={closeMobileMenu}
                     >
-                      Categories
+                      {t.categories}
                     </Link>
                 </li>
                 
@@ -170,7 +196,7 @@ const NavBar = () => {
                       className={`${currentPath === '/about' ? 'text-blueColor font-bold' : 'text-[#6f6f6f]'} hover:text-blueColor no-underline`}
                       onClick={closeMobileMenu}
                     >
-                      About
+                      {t.about}
                     </Link>
                 </li>
                 
@@ -180,7 +206,7 @@ const NavBar = () => {
                       className={`${currentPath === '/faq' ? 'text-blueColor font-bold' : 'text-[#6f6f6f]'} hover:text-blueColor no-underline`}
                       onClick={closeMobileMenu}
                     >
-                      FAQ
+                      {t.faq || 'FAQ'}
                     </Link>
                 </li>
                 
@@ -190,17 +216,50 @@ const NavBar = () => {
                       className={`${currentPath === '/contact' ? 'text-blueColor font-bold' : 'text-[#6f6f6f]'} hover:text-blueColor no-underline`}
                       onClick={closeMobileMenu}
                     >
-                      Contact
+                      {t.contact}
                     </Link>
                 </li>
                 
                 <div className="flex md:items-center py-2 md:py-0 gap-4 mt-2 md:mt-0 border-t md:border-0 pt-2 md:pt-0">
+                  {/* Language Selector */}
+                  <div className="relative" ref={languageSelectorRef}>
+                    <button 
+                      onClick={toggleLanguageSelector}
+                      className="text-[#6f6f6f] hover:text-blueColor no-underline flex items-center p-1"
+                      title={t.languageSelector}
+                    >
+                      <FaGlobe size={16} />
+                    </button>
+                    
+                    {/* Language Dropdown */}
+                    {showLanguageSelector && (
+                      <div className="absolute right-0 mt-2 w-40 bg-white rounded-md shadow-lg z-20 border border-[#e7e7e7]">
+                        <div className="p-2 border-b border-[#e7e7e7]">
+                          <h3 className="text-sm font-semibold">{t.languageSelector}</h3>
+                        </div>
+                        <div>
+                          {languages.map(lang => (
+                            <button
+                              key={lang.code}
+                              onClick={() => changeLanguage(lang.code)}
+                              className={`w-full text-left px-3 py-2 text-sm ${
+                                language === lang.code ? 'bg-blue-50 text-blueColor font-medium' : 'text-[#6f6f6f] hover:bg-gray-50'
+                              }`}
+                            >
+                              {lang.name}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                
                   {/* Notifications Icon */}
                   <div className="relative" ref={notificationRef}>
                     <button 
                       onClick={toggleNotifications}
                       className={`${currentPath === '/notifications' ? 'text-blueColor' : 'text-[#6f6f6f]'} hover:text-blueColor no-underline flex items-center p-1`}
-                      title="Notifications"
+                      title={t.notifications}
                     >
                       <FaBell size={16} />
                       {unreadCount > 0 && (
@@ -214,12 +273,12 @@ const NavBar = () => {
                     {showNotifications && (
                       <div className="absolute right-0 mt-2 w-80 max-w-[90vw] bg-white rounded-md shadow-lg z-20 border border-[#e7e7e7]">
                         <div className="p-3 border-b border-[#e7e7e7] flex justify-between items-center">
-                          <h3 className="font-semibold">Notifications</h3>
+                          <h3 className="font-semibold">{t.notifications}</h3>
                           <button 
                             onClick={goToAllNotifications}
                             className="text-sm text-blueColor hover:underline"
                           >
-                            View All
+                            {t.viewAll || 'View All'}
                           </button>
                         </div>
                         
@@ -247,7 +306,7 @@ const NavBar = () => {
                             ))
                           ) : (
                             <div className="p-4 text-center text-[#959595]">
-                              No notifications
+                              {t.noNotifications || 'No notifications'}
                             </div>
                           )}
                         </div>
@@ -255,7 +314,7 @@ const NavBar = () => {
                         {notifications.length > 5 && (
                           <div className="p-2 text-center border-t border-[#e7e7e7]">
                             <p className="text-xs text-[#959595]">
-                              Showing 5 of {notifications.length} notifications
+                              {t.showingNotifications || 'Showing'} 5 {t.of || 'of'} {notifications.length} {t.notifications.toLowerCase()}
                             </p>
                           </div>
                         )}
@@ -266,7 +325,7 @@ const NavBar = () => {
                               className="text-sm text-blueColor hover:underline"
                               onClick={handleMarkAllAsRead}
                             >
-                              Mark all as read
+                              {t.markAllAsRead || 'Mark all as read'}
                             </button>
                           </div>
                         )}
@@ -278,11 +337,11 @@ const NavBar = () => {
                     to="/profile" 
                     className={`${currentPath === '/profile' ? 'text-blueColor font-bold' : 'text-[#6f6f6f]'} hover:text-blueColor no-underline flex items-center`}
                     style={{ textDecoration: 'none' }}
-                    title="Profile"
+                    title={t.profile}
                     onClick={closeMobileMenu}
                   >
                     <FaUser size={16} />
-                    <span className="ml-2 md:hidden">Profile</span>
+                    <span className="ml-2 md:hidden">{t.profile}</span>
                   </Link>
                   
                   <button 
@@ -294,7 +353,7 @@ const NavBar = () => {
                     className="text-[#6f6f6f] hover:text-redColor no-underline flex items-center gap-1"
                   >
                     <FaSignOutAlt size={16} />
-                    <span className="md:inline">Logout</span>
+                    <span className="md:inline">{t.logout}</span>
                   </button>
                 </div>
               </>
@@ -307,7 +366,7 @@ const NavBar = () => {
                       className={`${currentPath === '/' ? 'text-blueColor font-bold' : 'text-[#6f6f6f]'} hover:text-blueColor no-underline`}
                       onClick={closeMobileMenu}
                     >
-                      Services
+                      {t.services || 'Services'}
                     </Link>
                 </li>
                 
@@ -317,7 +376,7 @@ const NavBar = () => {
                       className={`${currentPath === '/categories' ? 'text-blueColor font-bold' : 'text-[#6f6f6f]'} hover:text-blueColor no-underline`}
                       onClick={closeMobileMenu}
                     >
-                      Categories
+                      {t.categories}
                     </Link>
                 </li>
                 
@@ -327,7 +386,7 @@ const NavBar = () => {
                       className={`${currentPath === '/about' ? 'text-blueColor font-bold' : 'text-[#6f6f6f]'} hover:text-blueColor no-underline`}
                       onClick={closeMobileMenu}
                     >
-                      About
+                      {t.about}
                     </Link>
                 </li>
                 
@@ -337,7 +396,7 @@ const NavBar = () => {
                       className={`${currentPath === '/faq' ? 'text-blueColor font-bold' : 'text-[#6f6f6f]'} hover:text-blueColor no-underline`}
                       onClick={closeMobileMenu}
                     >
-                      FAQ
+                      {t.faq || 'FAQ'}
                     </Link>
                 </li>
                 
@@ -347,18 +406,52 @@ const NavBar = () => {
                       className={`${currentPath === '/contact' ? 'text-blueColor font-bold' : 'text-[#6f6f6f]'} hover:text-blueColor no-underline`}
                       onClick={closeMobileMenu}
                     >
-                      Contact
+                      {t.contact}
                     </Link>
                 </li>
 
                 <div className="flex flex-col md:flex-row md:items-center gap-2 md:gap-4 mt-2 md:mt-0 border-t md:border-0 pt-2 md:pt-0">
+                  {/* Language Selector for non-authenticated users */}
+                  <div className="relative md:order-last" ref={languageSelectorRef}>
+                    <button 
+                      onClick={toggleLanguageSelector}
+                      className="text-[#6f6f6f] hover:text-blueColor no-underline flex items-center p-1"
+                      title={t.languageSelector}
+                    >
+                      <FaGlobe size={16} />
+                      <span className="ml-2 md:hidden">{t.languageSelector}</span>
+                    </button>
+                    
+                    {/* Language Dropdown */}
+                    {showLanguageSelector && (
+                      <div className="absolute right-0 mt-2 w-40 bg-white rounded-md shadow-lg z-20 border border-[#e7e7e7]">
+                        <div className="p-2 border-b border-[#e7e7e7]">
+                          <h3 className="text-sm font-semibold">{t.languageSelector}</h3>
+                        </div>
+                        <div>
+                          {languages.map(lang => (
+                            <button
+                              key={lang.code}
+                              onClick={() => changeLanguage(lang.code)}
+                              className={`w-full text-left px-3 py-2 text-sm ${
+                                language === lang.code ? 'bg-blue-50 text-blueColor font-medium' : 'text-[#6f6f6f] hover:bg-gray-50'
+                              }`}
+                            >
+                              {lang.name}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
                   <li className={`menuList py-2 md:py-0 ${currentPath === '/login' ? 'active' : ''}`}>
                       <Link 
                         to="/login" 
                         className={`${currentPath === '/login' ? 'text-blueColor font-bold' : 'text-[#6f6f6f]'} hover:text-blueColor no-underline`}
                         onClick={closeMobileMenu}
                       >
-                        Login
+                        {t.login}
                       </Link>
                   </li>
                   
@@ -368,7 +461,7 @@ const NavBar = () => {
                         className={`${currentPath === '/register' ? 'text-blueColor font-bold' : 'text-[#6f6f6f]'} hover:text-blueColor no-underline`}
                         onClick={closeMobileMenu}
                       >
-                        Register
+                        {t.register}
                       </Link>
                   </li>
                 </div>

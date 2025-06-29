@@ -1,0 +1,29 @@
+
+for professional
+{
+  "fullName": "Mike Johnson",
+  "email": "mike@gmail.com",
+  "password": "password123",
+  "phone": "555-5678",
+  "userType": "professional",
+  "businessName": "Mike's Plumbing Services",
+  "services": ["plumbing", "handyman"],
+  "hourlyRate": 75,
+  "address": {
+    "city": "New York",
+    "state": "NY"
+  }
+}
+
+for homeowner
+{
+  "fullName": "John Smith",
+  "email": "john@gmail.com",
+  "password": "password123",
+  "phone": "555-1234",
+  "userType": "homeowner",
+  "address": {
+    "city": "New York",
+    "state": "NY"
+  }
+}

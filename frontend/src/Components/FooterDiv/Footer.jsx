@@ -1,5 +1,6 @@
 import React from 'react'
 import { Link } from 'react-router-dom'
+import { useLanguage } from '../../context/LanguageContext'
 
 // Imported Icons ========>
 import {AiFillInstagram} from 'react-icons/ai'
@@ -7,6 +8,9 @@ import {BsFacebook} from 'react-icons/bs'
 import {AiOutlineTwitter} from 'react-icons/ai'
 
 const Footer = () => {
+  // Use the language context
+  const { t } = useLanguage();
+  
   return (
     <div className='footer p-4 md:p-8 lg:p-[5rem] mb-4 bg-blueColor rounded-[10px] gap-6 md:gap-8 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 m-auto items-start justify-center'>
 
@@ -17,67 +21,67 @@ const Footer = () => {
             </Link>
         </div>
         <p className='text-white pb-[13px] opacity-70 leading-7'>
-        We connect homeowners with trusted professionals to handle all your home maintenance, repair, and improvement needs.
+          {t.footerDescription || 'We connect homeowners with trusted professionals to handle all your home maintenance, repair, and improvement needs.'}
         </p>
       </div>
 
       <div className='grid mb-6 sm:mb-0'>
         <span className='divTitle text-base md:text-[18px] font-semibold pb-3 md:pb-[1.5rem] text-white'>
-          Company
+          {t.companyInfo || 'Company'}
         </span>
         <div className='grid gap-2 md:gap-3'>
           <li className='text-white opacity-[.7] hover:opacity-[1] cursor-pointer'>
-            <Link to="/about" className="text-white no-underline">About Us</Link>
+            <Link to="/about" className="text-white no-underline">{t.aboutUs || 'About Us'}</Link>
           </li>
           <li className='text-white opacity-[.7] hover:opacity-[1] cursor-pointer'>
-            <Link to="/categories" className="text-white no-underline">Services</Link>
+            <Link to="/categories" className="text-white no-underline">{t.services || 'Services'}</Link>
           </li>
           <li className='text-white opacity-[.7] hover:opacity-[1] cursor-pointer'>
-            <Link to="/faq" className="text-white no-underline">FAQ</Link>
+            <Link to="/faq" className="text-white no-underline">{t.faq || 'FAQ'}</Link>
           </li>
         </div>
       </div>
 
       <div className='grid mb-6 sm:mb-0'>
         <span className='divTitle text-base md:text-[18px] font-semibold pb-3 md:pb-[1.5rem] text-white'>
-          Resources
+          {t.resources || 'Resources'}
         </span>
         <div className='grid gap-2 md:gap-3'>
           <li className='text-white opacity-[.7] hover:opacity-[1] cursor-pointer'>
-            <Link to="/login" className="text-white no-underline">My Account</Link>
+            <Link to="/login" className="text-white no-underline">{t.myAccount || 'My Account'}</Link>
           </li>
           <li className='text-white opacity-[.7] hover:opacity-[1] cursor-pointer'>
-            <Link to="/contact" className="text-white no-underline">Help Center</Link>
+            <Link to="/contact" className="text-white no-underline">{t.helpCenter || 'Help Center'}</Link>
           </li>
           <li className='text-white opacity-[.7] hover:opacity-[1] cursor-pointer'>
-            <Link to="/contact" className="text-white no-underline">Service Guarantee</Link>
+            <Link to="/contact" className="text-white no-underline">{t.serviceGuarantee || 'Service Guarantee'}</Link>
           </li>
           <li className='text-white opacity-[.7] hover:opacity-[1] cursor-pointer'>
-            <Link to="/contact" className="text-white no-underline">Contact Us</Link>
+            <Link to="/contact" className="text-white no-underline">{t.contactUs || 'Contact Us'}</Link>
           </li>
         </div>
       </div>
 
       <div className='grid mb-6 sm:mb-0'>
         <span className='divTitle text-base md:text-[18px] font-semibold pb-3 md:pb-[1.5rem] text-white'>
-          For Professionals
+          {t.forProfessionals || 'For Professionals'}
         </span>
         <div className='grid gap-2 md:gap-3'>
           <li className='text-white opacity-[.7] hover:opacity-[1] cursor-pointer'>
-            <Link to="/join" className="text-white no-underline">Join Our Network</Link>
+            <Link to="/join" className="text-white no-underline">{t.joinOurNetwork || 'Join Our Network'}</Link>
           </li>
           <li className='text-white opacity-[.7] hover:opacity-[1] cursor-pointer'>
-            <Link to="/pro-resources" className="text-white no-underline">Pro Resources</Link>
+            <Link to="/pro-resources" className="text-white no-underline">{t.proResources || 'Pro Resources'}</Link>
           </li>
           <li className='text-white opacity-[.7] hover:opacity-[1] cursor-pointer'>
-            <Link to="/success-stories" className="text-white no-underline">Success Stories</Link>
+            <Link to="/success-stories" className="text-white no-underline">{t.successStories || 'Success Stories'}</Link>
           </li>
         </div>
       </div>
 
       <div className='grid mb-6 sm:mb-0 sm:col-span-2 md:col-span-1'>
         <span className='divTitle text-base md:text-[18px] font-semibold pb-3 md:pb-[1.5rem] text-white'>
-          Contact Info
+          {t.contactInfo || 'Contact Info'}
         </span>
         <div>
          <small className='text-[14px] text-white'>
@@ -100,7 +104,7 @@ const Footer = () => {
       </div>
       
       <div className="col-span-1 sm:col-span-2 md:col-span-3 lg:col-span-5 text-white text-center text-sm opacity-70 mt-4 pt-4 border-t border-white/20">
-        <p>© {new Date().getFullYear()} HomeServices. All rights reserved.</p>
+        <p>{t.copyright || '©'} {new Date().getFullYear()} HomeServices. {t.allRightsReserved || 'All rights reserved.'}</p>
       </div>
     </div>
   )
