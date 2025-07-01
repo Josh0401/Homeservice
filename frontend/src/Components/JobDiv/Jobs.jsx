@@ -1,5 +1,6 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { fetchProfessionals, transformProfessionalsData } from '../../utils/apiService'
 
 // Imported Icons ========>
 import { BiTimeFive } from 'react-icons/bi'
@@ -17,170 +18,102 @@ import logo6 from '../../Assets/logo (6).png'
 import logo7 from '../../Assets/logo (7).png'
 import logo8 from '../../Assets/logo (8).png'
 
-// Modified Data with individual providers instead of companies
-const Data = [
-  {
-    id: 1,
-    image: logo1,
-    title: 'Michael Johnson',
-    profession: 'Carpenter',
-    time: 'Now', 
-    location: 'Canada',
-    desc: 'Professional carpenter with 8+ years experience in furniture repair and custom woodworking.',
-    company: 'Novac Linus Co.',
-    rating: '4.8 (124)',
-    price: 45,
-    qualifications: ['Certified Master Carpenter', 'Custom Furniture Specialist', 'Restoration Expert'],
-    previousWorks: [
-      { title: 'Custom Kitchen Renovation', description: 'Complete kitchen cabinets and island installation' },
-      { title: 'Antique Table Restoration', description: 'Restored 19th century oak dining table' },
-      { title: 'Built-in Bookcase', description: 'Floor-to-ceiling custom bookcase with integrated lighting' }
-    ]
-  },
-  {
-    id: 2,
-    image: logo2,
-    title: 'Sarah Williams',
-    profession: 'Plumber',
-    time: '2Hrs', 
-    location: 'Manchester',
-    desc: 'Emergency plumbing specialist with expertise in leak repairs and pipe installations.',
-    company: 'Liquid Accessments',
-    rating: '4.7 (98)',
-    price: 65,
-    qualifications: ['Licensed Master Plumber', 'Emergency Response Certified', 'Green Plumbing Specialist'],
-    previousWorks: [
-      { title: 'Commercial Bathroom Remodel', description: 'Complete plumbing installation for office building' },
-      { title: 'Emergency Pipe Burst Repair', description: 'After-hours emergency repair preventing water damage' },
-      { title: 'Tankless Water Heater Installation', description: 'Energy-efficient system installation' }
-    ]
-  },
-  {
-    id: 3,
-    image: logo3,
-    title: 'David Miller',
-    profession: 'Electrician',
-    time: '1Hr', 
-    location: 'Austria',
-    desc: 'Licensed electrician offering residential wiring, lighting installation, and safety inspections.',
-    company: 'PowerTech',
-    rating: '4.9 (156)',
-    price: 70,
-    qualifications: ['Master Electrician License', 'Residential & Commercial Certified', 'Smart Home Specialist'],
-    previousWorks: [
-      { title: 'Home Rewiring Project', description: 'Complete electrical system upgrade for 1950s home' },
-      { title: 'Smart Lighting Installation', description: 'Automated lighting system throughout luxury home' },
-      { title: 'Electrical Safety Audit', description: 'Comprehensive inspection for commercial property' }
-    ]
-  },
-  {
-    id: 4,
-    image: logo4,
-    title: 'Emma Rodriguez',
-    profession: 'Interior Designer',
-    time: 'Same Day',
-    location: 'Germany',
-    desc: 'Creative designer specializing in modern and minimalist home transformations.',
-    company: 'Design Hub',
-    rating: '4.6 (87)',
-    price: 85,
-    qualifications: ['Bachelor of Interior Design', 'NCIDQ Certified', 'Sustainable Design Specialist'],
-    previousWorks: [
-      { title: 'Modern Apartment Redesign', description: 'Complete redesign of 1200 sq ft urban apartment' },
-      { title: 'Minimalist Home Office', description: 'Functional and aesthetic workspace conversion' },
-      { title: 'Restaurant Interior Concept', description: 'Award-winning design for local bistro' }
-    ]
-  },
-  {
-    id: 5,
-    image: logo5,
-    title: 'James Wilson',
-    profession: 'Painter',
-    time: 'Now',
-    location: 'Manchester',
-    desc: 'Professional painter with expertise in interior and exterior painting using premium materials.',
-    company: 'ColorWorks',
-    rating: '4.5 (112)',
-    price: 40,
-    qualifications: ['Professional Painters Association Member', 'Specialty Finish Expert', 'Lead-Safe Certified'],
-    previousWorks: [
-      { title: 'Historic Home Exterior', description: 'Period-accurate restoration of Victorian facade' },
-      { title: 'Commercial Office Complex', description: 'Interior painting for 50,000 sq ft office space' },
-      { title: 'Decorative Wall Murals', description: 'Custom children\'s bedroom murals' }
-    ]
-  },
-  {
-    id: 6,
-    image: logo6,
-    title: 'Robert Garcia',
-    profession: 'Landscaper',
-    time: '3Hrs',
-    location: 'Norway',
-    desc: 'Experienced landscaper providing lawn maintenance, garden design, and outdoor renovation.',
-    company: 'Green Thumbs',
-    rating: '4.7 (76)',
-    price: 35,
-    qualifications: ['Certified Landscape Designer', 'Horticulture Degree', 'Irrigation Specialist'],
-    previousWorks: [
-      { title: 'Backyard Transformation', description: 'Complete redesign with water features and native plants' },
-      { title: 'Commercial Property Maintenance', description: 'Ongoing maintenance for business park' },
-      { title: 'Rooftop Garden Installation', description: 'Urban garden design for apartment complex' }
-    ]
-  },
-  {
-    id: 7,
-    image: logo7,
-    title: 'Thomas Anderson',
-    profession: 'HVAC Technician',
-    time: '4Hrs',
-    location: 'Leeds',
-    desc: 'Certified HVAC specialist with experience in installation, repairs, and maintenance.',
-    company: 'Climate Control',
-    rating: '4.8 (132)',
-    price: 75,
-    qualifications: ['HVAC Certified Technician', 'EPA Section 608 Certified', 'Commercial Systems Specialist'],
-    previousWorks: [
-      { title: 'Whole-Home HVAC Replacement', description: 'Complete system upgrade for 3500 sq ft home' },
-      { title: 'Commercial Refrigeration Install', description: 'Restaurant cooling system installation' },
-      { title: 'Ductwork Redesign', description: 'Efficiency improvement for older home' }
-    ]
-  },
-  {
-    id: 8,
-    image: logo8,
-    title: 'Lisa Thompson',
-    profession: 'Security Specialist',
-    time: 'Next Day',
-    location: 'Turkey',
-    desc: 'Home security expert specializing in system installation, camera setup, and security planning.',
-    company: 'Safe & Sound',
-    rating: '4.9 (93)',
-    price: 95,
-    qualifications: ['Certified Security Consultant', 'Smart Home Security Expert', 'Former Law Enforcement'],
-    previousWorks: [
-      { title: 'Comprehensive Home Security', description: 'Integrated cameras, alarms, and smart monitoring' },
-      { title: 'Small Business Security System', description: 'Complete retail store protection solution' },
-      { title: 'Estate Security Planning', description: 'Multi-layered security for luxury property' }
-    ]
-  }
-];
+// Default logo images array for fallback
+const defaultLogos = [logo1, logo2, logo3, logo4, logo5, logo6, logo7, logo8]
 
-// Pre-selected recommended providers (simpler than dynamic calculation)
-const recommendedProviderIds = [3, 5, 7]; // Electrician, Painter, HVAC Technician
+// Pre-selected recommended provider indices (will be based on actual data)
+const getRecommendedProviderIds = (providers) => {
+  // Return the first 3 providers with highest ratings, or first 3 if no ratings
+  const sortedByRating = [...providers].sort((a, b) => {
+    const ratingA = parseFloat(a.rating?.split(' ')[0] || '0')
+    const ratingB = parseFloat(b.rating?.split(' ')[0] || '0')
+    return ratingB - ratingA
+  })
+  return sortedByRating.slice(0, 3).map(provider => provider.id)
+}
 
-// Updated component with AI recommendations
-const Jobs = ({ filteredJobs = Data }) => {
-  const navigate = useNavigate();
-  const [showRecommendations, setShowRecommendations] = useState(true);
+// Updated component with API integration
+const Jobs = ({ filteredJobs = null, loading: appLoading = false, error: appError = null }) => {
+  const navigate = useNavigate()
+  const [showRecommendations, setShowRecommendations] = useState(true)
+  const [providers, setProviders] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
+  const [recommendedProviderIds, setRecommendedProviderIds] = useState([])
+
+  // Fetch data from API on component mount (only if no filteredJobs provided)
+  useEffect(() => {
+    // If filteredJobs is provided from App.jsx, use that instead of fetching
+    if (filteredJobs !== null) {
+      setProviders(filteredJobs)
+      setLoading(appLoading)
+      setError(appError)
+      
+      // Set recommended providers based on the provided data
+      if (filteredJobs.length > 0) {
+        const recommendedIds = getRecommendedProviderIds(filteredJobs)
+        setRecommendedProviderIds(recommendedIds)
+      }
+      return
+    }
+
+    // Only fetch if no filteredJobs provided (fallback)
+    const loadProfessionals = async () => {
+      try {
+        setLoading(true)
+        setError(null)
+        const apiData = await fetchProfessionals()
+        const transformedData = transformProfessionalsData(apiData)
+        setProviders(transformedData)
+        
+        // Update the exported Data for backward compatibility
+        updateDataExport(transformedData)
+        
+        // Set recommended providers based on the fetched data
+        const recommendedIds = getRecommendedProviderIds(transformedData)
+        setRecommendedProviderIds(recommendedIds)
+      } catch (err) {
+        console.error('Failed to load professionals:', err)
+        setError('Failed to load professionals. Please try again later.')
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    loadProfessionals()
+  }, [filteredJobs, appLoading, appError])
+
+  // Update providers when filteredJobs changes
+  useEffect(() => {
+    if (filteredJobs !== null) {
+      setProviders(filteredJobs)
+      if (filteredJobs.length > 0) {
+        const recommendedIds = getRecommendedProviderIds(filteredJobs)
+        setRecommendedProviderIds(recommendedIds)
+      }
+    }
+  }, [filteredJobs])
+
+  // Use filtered jobs if provided, otherwise use all providers
+  const displayedProviders = filteredJobs || providers
 
   // Filter out the recommended providers
-  const recommendedProviders = Data.filter(provider => 
+  const recommendedProviders = displayedProviders.filter(provider => 
     recommendedProviderIds.includes(provider.id)
-  );
+  )
 
   // Render a single provider card
   const renderProviderCard = (provider, isRecommended = false) => {
-    const {id, image, title, profession, time, location, desc, company, rating, price} = provider;
+    const {id, image, title, profession, time, location, desc, company, rating, price} = provider
+    
+    // Safety checks to ensure all values are strings/numbers
+    const safeTitle = String(title || 'Professional')
+    const safeProfession = String(profession || 'Service Provider')
+    const safeTime = String(time || 'Same Day')
+    const safeLocation = String(location || 'Location TBD')
+    const safeDesc = String(desc || 'Experienced professional')
+    const safeRating = String(rating || '4.5 (0)')
+    const safePrice = Number(price) || 50
     
     return (
       <div 
@@ -191,33 +124,36 @@ const Jobs = ({ filteredJobs = Data }) => {
         <div className='flex items-center gap-3 mb-2'>
           <FaUserCircle className='text-[24px] text-gray-400 group-hover:text-white'/>
           <div>
-            <h1 className='text-[16px] font-semibold text-textColor group-hover:text-white'>{title}</h1>
-            <h2 className='text-[14px] text-textColor group-hover:text-white'>{profession}</h2>
+            <h1 className='text-[16px] font-semibold text-textColor group-hover:text-white'>{safeTitle}</h1>
+            <h2 className='text-[14px] text-textColor group-hover:text-white'>{safeProfession}</h2>
           </div>
         </div>
         
         <span className='flex justify-end items-center text-[#ccc] gap-1 mb-1'>
-          <BiTimeFive/>{time}
+          <BiTimeFive/>{safeTime}
         </span>
-        <h6 className='text-[#ccc]'>{location}</h6>
+        <h6 className='text-[#ccc]'>{safeLocation}</h6>
         
         {/* Rating display */}
-        <div className='text-[#ccc] mt-2'>★ {rating}</div>
+        <div className='text-[#ccc] mt-2'>★ {safeRating}</div>
         
         <p className='text-[13px] text-[#959595] pt-[20px] border-t-[2px] mt-[20px] group-hover:text-white'>
-          {desc}
+          {safeDesc}
         </p>
         
         <div className='company flex items-center gap-2'>
-          <img src={image} alt="Provider" className='w-[10%]' />
-          <span className='text-[14px] py-[1rem] block group-hover:text-white'>${price}/hr</span>
+          <img src={image} alt="Provider" className='w-[10%]' onError={(e) => {
+            // Fallback to default logo if image fails to load
+            e.target.src = defaultLogos[0]
+          }} />
+          <span className='text-[14px] py-[1rem] block group-hover:text-white'>${safePrice}/hr</span>
         </div>
         
         <button 
           className='border-[2px] rounded-[10px] block p-[10px] w-full text-[14px] font-semibold text-textColor hover:bg-white group-hover/item:text-textColor group-hover:text-white'
           onClick={(e) => {
-            e.stopPropagation(); // Prevent triggering the card click
-            navigate(`/provider/${id}/book`);
+            e.stopPropagation() // Prevent triggering the card click
+            navigate(`/provider/${id}/book`)
           }}
         >
           Book Now
@@ -230,8 +166,46 @@ const Jobs = ({ filteredJobs = Data }) => {
           </div>
         )}
       </div>
-    );
-  };
+    )
+  }
+
+  // Loading state
+  if (loading) {
+    return (
+      <div className="flex justify-center items-center py-20">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blueColor mx-auto mb-4"></div>
+          <p className="text-textColor">Loading professionals...</p>
+        </div>
+      </div>
+    )
+  }
+
+  // Error state
+  if (error) {
+    return (
+      <div className="flex justify-center items-center py-20">
+        <div className="text-center">
+          <p className="text-red-500 mb-4">{error}</p>
+          <button 
+            onClick={() => window.location.reload()} 
+            className="bg-blueColor text-white px-4 py-2 rounded hover:bg-blue-600"
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  // Debug info
+  console.log('Jobs component render:', {
+    loading,
+    error,
+    providersLength: providers.length,
+    filteredJobsLength: filteredJobs ? filteredJobs.length : 'null',
+    displayedProvidersLength: displayedProviders.length
+  })
 
   return (
     <div>
@@ -267,8 +241,8 @@ const Jobs = ({ filteredJobs = Data }) => {
       {/* All Services Section */}
       <h2 className="text-xl font-bold text-textColor mb-4">All Available Services</h2>
       <div className="jobContainer flex gap-10 justify-center flex-wrap items-center py-10">
-        {filteredJobs.length > 0 ? (
-          filteredJobs.map(provider => renderProviderCard(provider))
+        {displayedProviders.length > 0 ? (
+          displayedProviders.map(provider => renderProviderCard(provider))
         ) : (
           <div className="noJobs text-center w-full py-20">
             <h2 className="text-2xl font-bold text-textColor mb-2">No services found</h2>
@@ -281,4 +255,13 @@ const Jobs = ({ filteredJobs = Data }) => {
 }
 
 export default Jobs
-export { Data }
+
+// Temporary backward compatibility export
+// This will be empty initially and populated when the API loads
+export let Data = []
+
+// Function to update the Data export (for backward compatibility)
+export const updateDataExport = (newData) => {
+  Data.length = 0 // Clear existing
+  Data.push(...newData) // Add new data
+}

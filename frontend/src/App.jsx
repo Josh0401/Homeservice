@@ -1,13 +1,16 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom'
 import { UserProvider } from './context/UserContext'
 import { AuthProvider } from './context/AuthContext'
 import { NotificationsProvider } from './context/NotificationsContext'
 import { LanguageProvider } from './context/LanguageContext' // Import the LanguageProvider
 
+// Import API service
+import { fetchProfessionals, transformProfessionalsData } from './utils/apiService'
+
 // Import components
 import Footer from './Components/FooterDiv/Footer'
-import Jobs, { Data } from './Components/JobDiv/Jobs'
+import Jobs from './Components/JobDiv/Jobs' // Removed Data import
 import Categories from './Components/JobDiv/Categories'
 import Contact from './Components/JobDiv/Contact'
 import Register from './Components/JobDiv/Register'
@@ -49,8 +52,34 @@ import AdminReports from './Components/JobDiv/Admin/AdminReports'
 import SystemSettings from './Components/JobDiv/Admin/SystemSettings'
 
 const App = () => {
-  // State for filtered jobs
-  const [filteredJobs, setFilteredJobs] = useState(Data);
+  // State for professionals data and filtered jobs
+  const [professionalsData, setProfessionalsData] = useState([])
+  const [filteredJobs, setFilteredJobs] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
+
+  // Load professionals data on app start
+  useEffect(() => {
+    const loadProfessionalsData = async () => {
+      try {
+        setLoading(true)
+        setError(null)
+        
+        const apiData = await fetchProfessionals()
+        const transformedData = transformProfessionalsData(apiData)
+        
+        setProfessionalsData(transformedData)
+        setFilteredJobs(transformedData) // Initially show all data
+      } catch (err) {
+        console.error('Failed to load professionals data:', err)
+        setError('Failed to load professionals data. Please try again later.')
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    loadProfessionalsData()
+  }, [])
 
   return (
     <AuthProvider>
@@ -64,8 +93,17 @@ const App = () => {
                 <Routes>
                   <Route path="/" element={
                     <>
-                      <Search setFilteredJobs={setFilteredJobs} originalJobs={Data} />
-                      <Jobs filteredJobs={filteredJobs} setFilteredJobs={setFilteredJobs} />
+                      <Search 
+                        setFilteredJobs={setFilteredJobs} 
+                        originalJobs={professionalsData}
+                        loading={loading}
+                      />
+                      <Jobs 
+                        filteredJobs={filteredJobs} 
+                        setFilteredJobs={setFilteredJobs}
+                        loading={loading}
+                        error={error}
+                      />
                       <Value />
                     </>
                   } />

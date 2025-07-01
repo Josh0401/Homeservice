@@ -1,27 +1,48 @@
 import React, { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { FaArrowLeft, FaUserCircle, FaStar, FaRegStar, FaMapMarkerAlt, FaClock, FaCalendarAlt, FaCheckCircle } from 'react-icons/fa'
-import { Data } from './Jobs'
+import { fetchProfessionals, transformProfessionalsData } from '../../utils/apiService'
 
 const ProviderDetails = () => {
   const { id } = useParams()
   const navigate = useNavigate()
   const [provider, setProvider] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
   const [currentMonth, setCurrentMonth] = useState(new Date())
   const [selectedDate, setSelectedDate] = useState(null)
   const [selectedTimeSlot, setSelectedTimeSlot] = useState(null)
   const [availableTimeSlots, setAvailableTimeSlots] = useState([])
 
   useEffect(() => {
-    // Find the provider by id from the Data array
-    const foundProvider = Data.find(item => item.id === parseInt(id))
-    
-    if (foundProvider) {
-      setProvider(foundProvider)
+    const loadProvider = async () => {
+      try {
+        setLoading(true)
+        setError(null)
+        
+        // Fetch all professionals from API
+        const apiData = await fetchProfessionals()
+        const transformedData = transformProfessionalsData(apiData)
+        
+        // Find the provider by id
+        const foundProvider = transformedData.find(item => 
+          item.id === parseInt(id) || item.id === id
+        )
+        
+        if (foundProvider) {
+          setProvider(foundProvider)
+        } else {
+          setError('Provider not found')
+        }
+      } catch (err) {
+        console.error('Failed to load provider:', err)
+        setError('Failed to load provider details. Please try again later.')
+      } finally {
+        setLoading(false)
+      }
     }
-    
-    setLoading(false)
+
+    loadProvider()
   }, [id])
 
   // Generate calendar data for the current month view
@@ -193,8 +214,35 @@ const ProviderDetails = () => {
   if (loading) {
     return (
       <div className="container mx-auto px-4 py-8">
-        <div className="text-center">
-          <p>Loading provider details...</p>
+        <div className="flex justify-center items-center py-20">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blueColor mx-auto mb-4"></div>
+            <p className="text-textColor">Loading provider details...</p>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="container mx-auto px-4 py-8">
+        <button 
+          onClick={() => navigate('/')}
+          className="flex items-center text-blueColor mb-6 hover:underline"
+        >
+          <FaArrowLeft className="mr-2" /> Back to results
+        </button>
+        
+        <div className="bg-white rounded-lg shadow-lg p-6 text-center">
+          <h1 className="text-2xl font-bold mb-4">Error Loading Provider</h1>
+          <p className="text-red-500 mb-4">{error}</p>
+          <button 
+            onClick={() => window.location.reload()} 
+            className="bg-blueColor text-white px-4 py-2 rounded hover:bg-blue-600"
+          >
+            Retry
+          </button>
         </div>
       </div>
     )
@@ -233,10 +281,18 @@ const ProviderDetails = () => {
         <div className="flex flex-col md:flex-row items-start md:items-center gap-6 mb-8">
           <div className="w-24 h-24 bg-greyIsh-100 rounded-full flex items-center justify-center">
             {provider.image ? (
-              <img src={provider.image} alt={provider.title} className="w-full h-full rounded-full object-cover" />
-            ) : (
-              <FaUserCircle className="text-6xl text-gray-400" />
-            )}
+              <img 
+                src={provider.image} 
+                alt={provider.title} 
+                className="w-full h-full rounded-full object-cover"
+                onError={(e) => {
+                  // Fallback to user icon if image fails to load
+                  e.target.style.display = 'none'
+                  e.target.nextSibling.style.display = 'block'
+                }}
+              />
+            ) : null}
+            <FaUserCircle className="text-6xl text-gray-400" style={{display: provider.image ? 'none' : 'block'}} />
           </div>
           
           <div className="flex-1">

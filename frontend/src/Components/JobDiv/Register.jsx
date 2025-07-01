@@ -22,9 +22,15 @@ const Register = () => {
     email: '',
     password: '',
     confirmPassword: '',
-    role: 'homeowner', // default role
-    companyName: '',
-    serviceCategory: '',
+    phone: '',
+    userType: 'homeowner', // default userType
+    businessName: '',
+    services: [],
+    hourlyRate: '',
+    address: {
+      city: '',
+      state: ''
+    },
     agreeToTerms: false
   })
 
@@ -34,14 +40,49 @@ const Register = () => {
   // State for form submission
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [submitSuccess, setSubmitSuccess] = useState(false)
+  const [apiError, setApiError] = useState('')
 
   // Handle input changes
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target
-    setFormData({
-      ...formData,
-      [name]: type === 'checkbox' ? checked : value
-    })
+    
+    // Handle nested address fields
+    if (name === 'city' || name === 'state') {
+      setFormData({
+        ...formData,
+        address: {
+          ...formData.address,
+          [name]: value
+        }
+      })
+    } else if (name === 'services') {
+      // Handle services array (checkboxes)
+      const serviceValue = value
+      const currentServices = [...formData.services]
+      
+      if (checked) {
+        // Add service if checked
+        if (!currentServices.includes(serviceValue)) {
+          currentServices.push(serviceValue)
+        }
+      } else {
+        // Remove service if unchecked
+        const index = currentServices.indexOf(serviceValue)
+        if (index > -1) {
+          currentServices.splice(index, 1)
+        }
+      }
+      
+      setFormData({
+        ...formData,
+        services: currentServices
+      })
+    } else {
+      setFormData({
+        ...formData,
+        [name]: type === 'checkbox' ? checked : value
+      })
+    }
 
     // Clear error when user starts typing in a field
     if (errors[name]) {
@@ -49,6 +90,11 @@ const Register = () => {
         ...errors,
         [name]: ''
       })
+    }
+
+    // Clear API error when user makes changes
+    if (apiError) {
+      setApiError('')
     }
   }
 
@@ -81,14 +127,35 @@ const Register = () => {
       newErrors.confirmPassword = 'Passwords do not match'
     }
 
-    // Validate service provider information if role is provider
-    if (formData.role === 'provider') {
-      if (!formData.companyName.trim()) {
-        newErrors.companyName = 'Business name is required'
+    // Validate phone
+    const phoneRegex = /^\+?[\d\s\-\(\)]{10,}$/
+    if (!formData.phone.trim()) {
+      newErrors.phone = 'Phone number is required'
+    } else if (!phoneRegex.test(formData.phone.replace(/\s/g, ''))) {
+      newErrors.phone = 'Please enter a valid phone number'
+    }
+
+    // Validate provider-specific fields
+    if (formData.userType === 'professional') {
+      if (!formData.businessName.trim()) {
+        newErrors.businessName = 'Business name is required'
       }
-      if (!formData.serviceCategory.trim()) {
-        newErrors.serviceCategory = 'Service category is required'
+      if (formData.services.length === 0) {
+        newErrors.services = 'Please select at least one service'
       }
+      if (!formData.hourlyRate) {
+        newErrors.hourlyRate = 'Hourly rate is required'
+      } else if (isNaN(formData.hourlyRate) || parseFloat(formData.hourlyRate) <= 0) {
+        newErrors.hourlyRate = 'Please enter a valid hourly rate'
+      }
+    }
+
+    // Validate address
+    if (!formData.address.city.trim()) {
+      newErrors.city = 'City is required'
+    }
+    if (!formData.address.state.trim()) {
+      newErrors.state = 'State is required'
     }
 
     // Validate terms agreement
@@ -99,9 +166,75 @@ const Register = () => {
     return newErrors
   }
 
+  // API call function
+  const registerUser = async (userData) => {
+    try {
+      // You may need to adjust this URL based on your backend setup
+      // Common alternatives:
+      // - 'http://localhost:3001/api/auth/register' (if backend runs on different port)
+      // - '/auth/register' (if no /api prefix)
+      // - 'http://localhost:8000/api/auth/register' (different port)
+      const apiUrl = 'http://localhost:5000/api/auth/register';
+      
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(userData),
+      });
+
+      // Check if response has content
+      const contentType = response.headers.get('content-type');
+      let data = null;
+
+      if (contentType && contentType.includes('application/json')) {
+        // Only try to parse JSON if content-type indicates JSON
+        const text = await response.text();
+        if (text) {
+          try {
+            data = JSON.parse(text);
+          } catch (parseError) {
+            console.error('JSON parse error:', parseError);
+            throw new Error('Invalid response format from server');
+          }
+        }
+      } else {
+        // For non-JSON responses, get as text
+        data = await response.text();
+      }
+
+      if (!response.ok) {
+        // Handle different error scenarios
+        if (response.status === 404) {
+          throw new Error('Registration endpoint not found. Please check if the server is running.');
+        } else if (response.status === 400) {
+          throw new Error(data?.message || data || 'Invalid registration data');
+        } else if (response.status === 409) {
+          throw new Error('Email already exists');
+        } else if (response.status === 500) {
+          throw new Error('Server error. Please try again later.');
+        } else {
+          throw new Error(data?.message || data || `Registration failed: ${response.status}`);
+        }
+      }
+
+      return data || { success: true };
+    } catch (error) {
+      // Re-throw our custom errors, wrap network errors
+      if (error.name === 'TypeError' && error.message.includes('fetch')) {
+        throw new Error('Network error. Please check your connection.');
+      }
+      throw error;
+    }
+  };
+
   // Handle form submission
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault()
+    
+    // Clear previous API errors
+    setApiError('')
     
     // Validate form
     const formErrors = validateForm()
@@ -113,11 +246,32 @@ const Register = () => {
     // Set submitting state
     setIsSubmitting(true)
     
-    // Simulate API call
-    setTimeout(() => {
-      console.log('Form submitted:', formData)
-      setIsSubmitting(false)
-      setSubmitSuccess(true)
+    try {
+      // Prepare data for API - matches your exact API structure
+      const apiData = {
+        fullName: formData.fullName,
+        email: formData.email,
+        password: formData.password,
+        phone: formData.phone,
+        userType: formData.userType,
+        address: {
+          city: formData.address.city,
+          state: formData.address.state
+        }
+      };
+
+      // Add provider-specific fields if userType is provider
+      if (formData.userType === 'professional') {
+        apiData.businessName = formData.businessName;
+        apiData.services = formData.services;
+        apiData.hourlyRate = parseFloat(formData.hourlyRate);
+      }
+
+      // Call the API
+      const result = await registerUser(apiData);
+      
+      console.log('Registration successful:', result);
+      setSubmitSuccess(true);
       
       // Reset form after successful submission
       setTimeout(() => {
@@ -126,14 +280,35 @@ const Register = () => {
           email: '',
           password: '',
           confirmPassword: '',
-          role: 'homeowner',
-          companyName: '',
-          serviceCategory: '',
+          phone: '',
+          userType: 'professional',
+          businessName: '',
+          services: [],
+          hourlyRate: '',
+          address: {
+            city: '',
+            state: ''
+          },
           agreeToTerms: false
         })
         setSubmitSuccess(false)
-      }, 3000)
-    }, 1500)
+      }, 5000) // Extended time to allow user to see success message
+      
+    } catch (error) {
+      console.error('Registration error:', error);
+      
+      // Handle different types of errors
+      if (error.message.includes('email already exists') || error.message.includes('already registered')) {
+        setErrors({ email: 'This email is already registered' });
+      } else if (error.message.includes('network') || error.message.includes('fetch')) {
+        setApiError('Network error. Please check your connection and try again.');
+      } else {
+        setApiError(error.message || 'Registration failed. Please try again.');
+      }
+      
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   return (
@@ -159,20 +334,30 @@ const Register = () => {
             </div>
           ) : (
             <form onSubmit={handleSubmit} className="bg-white rounded-lg shadow-md border border-[#e7e7e7] p-8">
+              {/* API Error Display */}
+              {apiError && (
+                <div className="mb-6 bg-red-50 border border-red-200 rounded-lg p-4">
+                  <div className="flex items-center">
+                    <div className="text-red-500 mr-2">⚠️</div>
+                    <p className="text-red-700">{apiError}</p>
+                  </div>
+                </div>
+              )}
+
               {/* Role Selection */}
               <div className="mb-8">
                 <h2 className="text-lg font-semibold text-textColor mb-4">I want to:</h2>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div 
                     className={`role-card cursor-pointer p-4 border rounded-lg flex items-center gap-3 transition-all ${
-                      formData.role === 'homeowner' 
+                      formData.userType === 'homeowner' 
                         ? 'border-blueColor bg-blue-50' 
                         : 'border-[#e7e7e7] hover:border-blue-200'
                     }`}
-                    onClick={() => setFormData({...formData, role: 'homeowner'})}
+                    onClick={() => setFormData({...formData, userType: 'homeowner'})}
                   >
                     <div className={`icon-box p-3 rounded-full ${
-                      formData.role === 'homeowner' ? 'bg-blueColor text-white' : 'bg-[#f7f7f7] text-[#959595]'
+                      formData.userType === 'homeowner' ? 'bg-blueColor text-white' : 'bg-[#f7f7f7] text-[#959595]'
                     }`}>
                       <FaHome />
                     </div>
@@ -182,9 +367,9 @@ const Register = () => {
                     </div>
                     <input 
                       type="radio"
-                      name="role"
+                      name="userType"
                       value="homeowner"
-                      checked={formData.role === 'homeowner'}
+                      checked={formData.userType === 'homeowner'}
                       onChange={handleChange}
                       className="ml-auto"
                     />
@@ -192,14 +377,14 @@ const Register = () => {
                   
                   <div 
                     className={`role-card cursor-pointer p-4 border rounded-lg flex items-center gap-3 transition-all ${
-                      formData.role === 'provider' 
+                      formData.userType === 'professional' 
                         ? 'border-blueColor bg-blue-50' 
                         : 'border-[#e7e7e7] hover:border-blue-200'
                     }`}
-                    onClick={() => setFormData({...formData, role: 'provider'})}
+                    onClick={() => setFormData({...formData, userType: 'professional'})}
                   >
                     <div className={`icon-box p-3 rounded-full ${
-                      formData.role === 'provider' ? 'bg-blueColor text-white' : 'bg-[#f7f7f7] text-[#959595]'
+                      formData.userType === 'professional' ? 'bg-blueColor text-white' : 'bg-[#f7f7f7] text-[#959595]'
                     }`}>
                       <FaTools />
                     </div>
@@ -209,9 +394,9 @@ const Register = () => {
                     </div>
                     <input 
                       type="radio"
-                      name="role"
-                      value="provider"
-                      checked={formData.role === 'provider'}
+                      name="userType"
+                      value="professional"
+                      checked={formData.userType === 'professional'}
                       onChange={handleChange}
                       className="ml-auto"
                     />
@@ -316,52 +501,146 @@ const Register = () => {
                     {errors.confirmPassword && <p className="text-red-500 text-sm mt-1">{errors.confirmPassword}</p>}
                   </div>
                 </div>
+                
+                <div className="mb-4">
+                  <label htmlFor="phone" className="block text-textColor mb-2">Phone Number <span className="text-red-500">*</span></label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-3 text-[#959595]">
+                      📞
+                    </span>
+                    <input 
+                      type="tel"
+                      id="phone"
+                      name="phone"
+                      value={formData.phone}
+                      onChange={handleChange}
+                      placeholder="Enter your phone number"
+                      className={`w-full p-3 pl-10 rounded-md border ${errors.phone ? 'border-red-500' : 'border-[#e7e7e7]'} focus:border-blueColor focus:outline-none`}
+                    />
+                  </div>
+                  {errors.phone && <p className="text-red-500 text-sm mt-1">{errors.phone}</p>}
+                </div>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label htmlFor="city" className="block text-textColor mb-2">City <span className="text-red-500">*</span></label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-3 text-[#959595]">
+                        🏙️
+                      </span>
+                      <input 
+                        type="text"
+                        id="city"
+                        name="city"
+                        value={formData.address.city}
+                        onChange={handleChange}
+                        placeholder="Enter your city"
+                        className={`w-full p-3 pl-10 rounded-md border ${errors.city ? 'border-red-500' : 'border-[#e7e7e7]'} focus:border-blueColor focus:outline-none`}
+                      />
+                    </div>
+                    {errors.city && <p className="text-red-500 text-sm mt-1">{errors.city}</p>}
+                  </div>
+                  
+                  <div>
+                    <label htmlFor="state" className="block text-textColor mb-2">State <span className="text-red-500">*</span></label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-3 text-[#959595]">
+                        📍
+                      </span>
+                      <input 
+                        type="text"
+                        id="state"
+                        name="state"
+                        value={formData.address.state}
+                        onChange={handleChange}
+                        placeholder="Enter your state"
+                        className={`w-full p-3 pl-10 rounded-md border ${errors.state ? 'border-red-500' : 'border-[#e7e7e7]'} focus:border-blueColor focus:outline-none`}
+                      />
+                    </div>
+                    {errors.state && <p className="text-red-500 text-sm mt-1">{errors.state}</p>}
+                  </div>
+                </div>
               </div>
               
               {/* Provider Information (Conditional) */}
-              {formData.role === 'provider' && (
+              {formData.userType === 'professional' && (
                 <div className="mb-8">
                   <h2 className="text-lg font-semibold text-textColor mb-4">Service Provider Information</h2>
                   
                   <div className="mb-4">
-                    <label htmlFor="companyName" className="block text-textColor mb-2">Business Name <span className="text-red-500">*</span></label>
+                    <label htmlFor="businessName" className="block text-textColor mb-2">Business Name <span className="text-red-500">*</span></label>
                     <div className="relative">
                       <span className="absolute left-3 top-3 text-[#959595]">
                         <FaTools />
                       </span>
                       <input 
                         type="text"
-                        id="companyName"
-                        name="companyName"
-                        value={formData.companyName}
+                        id="businessName"
+                        name="businessName"
+                        value={formData.businessName}
                         onChange={handleChange}
                         placeholder="Enter your business name"
-                        className={`w-full p-3 pl-10 rounded-md border ${errors.companyName ? 'border-red-500' : 'border-[#e7e7e7]'} focus:border-blueColor focus:outline-none`}
+                        className={`w-full p-3 pl-10 rounded-md border ${errors.businessName ? 'border-red-500' : 'border-[#e7e7e7]'} focus:border-blueColor focus:outline-none`}
                       />
                     </div>
-                    {errors.companyName && <p className="text-red-500 text-sm mt-1">{errors.companyName}</p>}
+                    {errors.businessName && <p className="text-red-500 text-sm mt-1">{errors.businessName}</p>}
                   </div>
                   
                   <div className="mb-4">
-                    <label htmlFor="serviceCategory" className="block text-textColor mb-2">Service Category <span className="text-red-500">*</span></label>
-                    <select 
-                      id="serviceCategory"
-                      name="serviceCategory"
-                      value={formData.serviceCategory}
-                      onChange={handleChange}
-                      className={`w-full p-3 rounded-md border ${errors.serviceCategory ? 'border-red-500' : 'border-[#e7e7e7]'} focus:border-blueColor focus:outline-none`}
-                    >
-                      <option value="">Select primary service category</option>
-                      <option value="plumbing">Plumbing</option>
-                      <option value="electrical">Electrical</option>
-                      <option value="carpentry">Carpentry</option>
-                      <option value="painting">Painting</option>
-                      <option value="hvac">HVAC</option>
-                      <option value="cleaning">Cleaning</option>
-                      <option value="landscaping">Landscaping</option>
-                      <option value="other">Other</option>
-                    </select>
-                    {errors.serviceCategory && <p className="text-red-500 text-sm mt-1">{errors.serviceCategory}</p>}
+                    <label className="block text-textColor mb-2">Services Offered <span className="text-red-500">*</span></label>
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                      {[
+                        'Plumbing',
+                        'Electrical', 
+                        'Carpentry',
+                        'Painting',
+                        'HVAC',
+                        'Cleaning',
+                        'Landscaping',
+                        'Roofing',
+                        'Flooring',
+                        'Appliance Repair',
+                        'Pest Control',
+                        'Other'
+                      ].map((service) => (
+                        <div key={service} className="flex items-center">
+                          <input 
+                            type="checkbox"
+                            id={service}
+                            name="services"
+                            value={service}
+                            checked={formData.services.includes(service)}
+                            onChange={handleChange}
+                            className="mr-2"
+                          />
+                          <label htmlFor={service} className="text-sm text-textColor cursor-pointer">
+                            {service}
+                          </label>
+                        </div>
+                      ))}
+                    </div>
+                    {errors.services && <p className="text-red-500 text-sm mt-1">{errors.services}</p>}
+                  </div>
+                  
+                  <div className="mb-4">
+                    <label htmlFor="hourlyRate" className="block text-textColor mb-2">Hourly Rate (USD) <span className="text-red-500">*</span></label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-3 text-[#959595]">
+                        💰
+                      </span>
+                      <input 
+                        type="number"
+                        id="hourlyRate"
+                        name="hourlyRate"
+                        value={formData.hourlyRate}
+                        onChange={handleChange}
+                        placeholder="Enter your hourly rate"
+                        min="0"
+                        step="0.01"
+                        className={`w-full p-3 pl-10 rounded-md border ${errors.hourlyRate ? 'border-red-500' : 'border-[#e7e7e7]'} focus:border-blueColor focus:outline-none`}
+                      />
+                    </div>
+                    {errors.hourlyRate && <p className="text-red-500 text-sm mt-1">{errors.hourlyRate}</p>}
                   </div>
                 </div>
               )}

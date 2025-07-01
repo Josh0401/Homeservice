@@ -71,8 +71,31 @@ const Login = () => {
     return newErrors
   }
 
+  // API call to login
+  const loginUser = async (loginData) => {
+    try {
+      const response = await fetch('http://localhost:5000/api/auth/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(loginData)
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || 'Login failed');
+      }
+
+      return data;
+    } catch (error) {
+      throw new Error(error.message || 'Network error. Please try again.');
+    }
+  };
+
   // Handle form submission
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault()
     
     // Validate form
@@ -84,33 +107,40 @@ const Login = () => {
     
     // Set submitting state
     setIsSubmitting(true)
+    setLoginError('')
     
-    // Simulate API call
-    setTimeout(() => {
-      console.log('Login attempt:', formData)
-      setIsSubmitting(false)
-      
-      // Simulate successful login
-      // In a real app, you would handle authentication here
-      if (formData.email === 'test@example.com' && formData.password === 'password123') {
-        // Create a user object with some sample data
-        const userData = {
-          id: 1,
-          email: formData.email,
-          name: 'John Doe',
-          role: 'customer'
-        };
-        
-        // Call the login function from our auth context
-        login(userData);
-        
-        // Redirect to dashboard instead of home page
-        navigate('/dashboard');
-      } else {
-        // Show login error
-        setLoginError('Invalid email or password. Please try again.')
+    try {
+      // Call the API
+      const response = await loginUser({
+        email: formData.email,
+        password: formData.password
+      });
+
+      // Handle successful login
+      if (response.success) {
+        // Store token in localStorage
+        localStorage.setItem('token', response.token);
+        localStorage.setItem('user', JSON.stringify(response.user));
+
+        // Call the login function from auth context
+        login(response.user, response.token);
+
+        // Show success message (optional)
+        console.log('Login successful:', response.user);
+
+        // Redirect based on user type
+        if (response.user.userType === 'professional') {
+          navigate('/provider/dashboard');
+        } else {
+          navigate('/dashboard');
+        }
       }
-    }, 1500)
+    } catch (error) {
+      // Handle login error
+      setLoginError(error.message);
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   // Handle social login
@@ -154,6 +184,7 @@ const Login = () => {
                   onChange={handleChange}
                   placeholder="Enter your email address"
                   className={`w-full p-3 pl-10 rounded-md border ${errors.email ? 'border-red-500' : 'border-[#e7e7e7]'} focus:border-blueColor focus:outline-none`}
+                  disabled={isSubmitting}
                 />
               </div>
               {errors.email && <p className="text-red-500 text-sm mt-1">{errors.email}</p>}
@@ -179,12 +210,14 @@ const Login = () => {
                   onChange={handleChange}
                   placeholder="Enter your password"
                   className={`w-full p-3 pl-10 pr-10 rounded-md border ${errors.password ? 'border-red-500' : 'border-[#e7e7e7]'} focus:border-blueColor focus:outline-none`}
+                  disabled={isSubmitting}
                 />
                 <button 
                   type="button"
                   className="absolute right-3 top-3 text-[#959595] hover:text-blueColor"
                   onClick={togglePasswordVisibility}
                   tabIndex="-1"
+                  disabled={isSubmitting}
                 >
                   {showPassword ? <FaEyeSlash /> : <FaEye />}
                 </button>
@@ -201,6 +234,7 @@ const Login = () => {
                   name="rememberMe"
                   checked={formData.rememberMe}
                   onChange={handleChange}
+                  disabled={isSubmitting}
                 />
                 <label htmlFor="rememberMe" className="text-[#959595]">
                   Remember me on this device
@@ -212,16 +246,26 @@ const Login = () => {
             <div className="mb-6">
               <button 
                 type="submit"
-                className="w-full bg-blueColor text-white py-3 rounded-md hover:bg-opacity-90 transition-all disabled:bg-opacity-70 disabled:cursor-not-allowed"
+                className="w-full bg-blueColor text-white py-3 rounded-md hover:bg-opacity-90 transition-all disabled:bg-opacity-70 disabled:cursor-not-allowed flex items-center justify-center"
                 disabled={isSubmitting}
               >
-                {isSubmitting ? 'Logging in...' : 'Log In'}
+                {isSubmitting ? (
+                  <>
+                    <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Logging in...
+                  </>
+                ) : (
+                  'Log In'
+                )}
               </button>
             </div>
             
             {/* Test Account Info */}
             <div className="bg-blue-50 border border-blue-200 text-blue-700 rounded-md p-4 mb-6 text-sm">
-              <strong>For testing:</strong> Use email <code>test@example.com</code> and password <code>password123</code>
+              <strong>For testing:</strong> Create an account first or use your registered credentials
             </div>
             
             {/* Divider */}
@@ -236,7 +280,8 @@ const Login = () => {
               <button 
                 type="button"
                 onClick={() => handleSocialLogin('Google')}
-                className="flex items-center justify-center gap-2 p-3 border border-[#e7e7e7] rounded-md hover:bg-[#f7f7f7] transition-all"
+                className="flex items-center justify-center gap-2 p-3 border border-[#e7e7e7] rounded-md hover:bg-[#f7f7f7] transition-all disabled:opacity-50"
+                disabled={isSubmitting}
               >
                 <FaGoogle className="text-red-500" />
                 <span>Google</span>
@@ -245,7 +290,8 @@ const Login = () => {
               <button 
                 type="button"
                 onClick={() => handleSocialLogin('Facebook')}
-                className="flex items-center justify-center gap-2 p-3 border border-[#e7e7e7] rounded-md hover:bg-[#f7f7f7] transition-all"
+                className="flex items-center justify-center gap-2 p-3 border border-[#e7e7e7] rounded-md hover:bg-[#f7f7f7] transition-all disabled:opacity-50"
+                disabled={isSubmitting}
               >
                 <FaFacebook className="text-blue-600" />
                 <span>Facebook</span>

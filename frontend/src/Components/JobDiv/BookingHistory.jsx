@@ -3,84 +3,12 @@ import { FaCalendarAlt, FaHistory, FaClock, FaMapMarkerAlt, FaUser, FaTools, FaE
 import { useUser } from '../../context/UserContext';
 import { useLocation } from 'react-router-dom';
 
-// Sample booking data - in a real app, this would come from your API
-const sampleBookings = [
-  {
-    id: 1,
-    serviceTitle: 'Plumbing Services',
-    providerName: 'Liquid Accessments',
-    providerImage: '/path/to/provider1.jpg',
-    date: '2023-05-15T14:00:00',
-    address: '123 Main St, Manchester',
-    status: 'completed',
-    price: 85.50,
-    duration: 2,
-    rating: 4,
-    notes: 'Fixed kitchen sink and bathroom leak.',
-    images: ['/path/to/image1.jpg', '/path/to/image2.jpg']
-  },
-  {
-    id: 2,
-    serviceTitle: 'House Painting',
-    providerName: 'ColorWorks',
-    providerImage: '/path/to/provider2.jpg',
-    date: '2023-06-10T09:30:00',
-    address: '456 Oak Ave, Manchester',
-    status: 'completed',
-    price: 350.00,
-    duration: 8,
-    rating: 5,
-    notes: 'Painted living room and dining room. Very satisfied with the results!',
-    images: ['/path/to/image3.jpg']
-  },
-  {
-    id: 3,
-    serviceTitle: 'Electrical Services',
-    providerName: 'PowerTech',
-    providerImage: '/path/to/provider3.jpg',
-    date: '2023-12-05T11:00:00',
-    address: '789 Pine St, Manchester',
-    status: 'scheduled',
-    price: 120.00,
-    duration: 3,
-    rating: null,
-    notes: 'Need to install new lighting fixtures in kitchen and dining room.',
-    images: []
-  },
-  {
-    id: 4,
-    serviceTitle: 'Lawn Care',
-    providerName: 'Green Thumbs',
-    providerImage: '/path/to/provider4.jpg',
-    date: '2023-12-15T15:00:00',
-    address: '123 Main St, Manchester',
-    status: 'scheduled',
-    price: 45.00,
-    duration: 1.5,
-    rating: null,
-    notes: 'Regular lawn maintenance service.',
-    images: []
-  },
-  {
-    id: 5,
-    serviceTitle: 'HVAC Services',
-    providerName: 'Climate Control',
-    providerImage: '/path/to/provider5.jpg',
-    date: '2023-11-20T13:00:00',
-    address: '321 Elm St, Manchester',
-    status: 'cancelled',
-    price: 95.00,
-    duration: 2,
-    rating: null,
-    notes: 'Cancelled due to scheduling conflict.',
-    images: []
-  }
-];
-
 const BookingHistory = () => {
   const { userData } = useUser();
   const location = useLocation();
   const [bookings, setBookings] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [activeTab, setActiveTab] = useState('upcoming');
   const [selectedBooking, setSelectedBooking] = useState(null);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
@@ -92,6 +20,64 @@ const BookingHistory = () => {
   const [showNewBookingAlert, setShowNewBookingAlert] = useState(false);
   const [newBookingId, setNewBookingId] = useState(null);
 
+  // Fetch bookings from API
+  const fetchBookings = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      const response = await fetch('http://localhost:5000/api/bookings/my-applications', {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${userData?.token || localStorage.getItem('token')}`
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      console.log('API Response:', data);
+      
+      // Handle the actual API response structure
+      const applicationsArray = data.applications || data || [];
+      
+      // Transform API data to match component structure
+      const transformedBookings = applicationsArray.map(booking => ({
+        id: booking._id || booking.id,
+        serviceTitle: booking.service?.title || booking.title || 'Service',
+        providerName: booking.professional?.fullName || booking.professional?.businessName || 'Provider',
+        providerImage: booking.professional?.image || '/path/to/default.jpg',
+        date: booking.preferredDate || booking.scheduledDate || booking.date,
+        time: booking.preferredTime || '',
+        address: `${booking.location?.address?.street || ''}, ${booking.location?.address?.city || ''}, ${booking.location?.address?.zipCode || ''}`.trim().replace(/^,|,$/, ''),
+        status: booking.status || 'pending',
+        price: booking.pricing?.estimatedCost || booking.estimatedCost || booking.price || 0,
+        currency: booking.pricing?.currency || 'USD',
+        duration: Math.floor((booking.estimatedDuration || 120) / 60), // Convert minutes to hours
+        rating: booking.rating || null,
+        review: booking.review || null,
+        notes: booking.description || booking.notes || '',
+        images: booking.images || [],
+        cancelReason: booking.cancelReason || '',
+        referenceNumber: booking.referenceNumber || '',
+        urgency: booking.urgency || '',
+        paymentStatus: booking.paymentStatus || '',
+        // Keep original API data for reference
+        originalData: booking
+      }));
+
+      setBookings(transformedBookings);
+    } catch (err) {
+      console.error('Error fetching bookings:', err);
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Fetch bookings on component mount and when a new booking is added
   useEffect(() => {
     // Check if there's a new booking in location state
@@ -99,12 +85,9 @@ const BookingHistory = () => {
     const providerData = location.state?.provider;
     
     if (newBookingData && providerData) {
-      // Generate a unique ID for the new booking
-      const newId = bookings.length > 0 ? Math.max(...bookings.map(b => b.id)) + 1 : 1;
-      
       // Create a new booking entry from the form data
       const newBooking = {
-        id: newId,
+        id: `temp-${Date.now()}`, // Temporary ID until API returns real ID
         serviceTitle: newBookingData.serviceType === 'custom' 
           ? 'Custom Service' 
           : newBookingData.serviceType,
@@ -113,53 +96,47 @@ const BookingHistory = () => {
         date: `${newBookingData.date}T${newBookingData.time.replace(' ', '')}`,
         address: `${newBookingData.address}, ${newBookingData.city}, ${newBookingData.zipCode}`,
         status: 'scheduled',
-        price: providerData.price * 2 + 10, // Estimated from booking process
-        duration: 2, // Default duration
+        price: providerData.price * 2 + 10,
+        duration: 2,
         rating: null,
+        review: null,
         notes: newBookingData.serviceType === 'custom' 
           ? newBookingData.customServiceDescription 
           : `Standard ${providerData.profession} service`,
         images: []
       };
       
-      // Add the new booking to the state
+      // Add the new booking to the state temporarily
       setBookings(prevBookings => [newBooking, ...prevBookings]);
-      
-      // Set the new booking ID to highlight it
-      setNewBookingId(newId);
+      setNewBookingId(newBooking.id);
       setShowNewBookingAlert(true);
-      
-      // Set active tab to 'upcoming' to show the new booking
       setActiveTab('upcoming');
       
       // Clear the location state after processing
       window.history.replaceState({}, document.title);
       
-      // Auto-hide the alert after 6 seconds
+      // Auto-hide the alert and refresh from API
       const timer = setTimeout(() => {
         setShowNewBookingAlert(false);
         setNewBookingId(null);
+        fetchBookings(); // Refresh to get real data from API
       }, 6000);
       
       return () => clearTimeout(timer);
     } else {
-      // In a real app, you would fetch from your API
-      // For now, we'll use our sample data
-      setBookings(sampleBookings);
+      // Fetch bookings from API
+      fetchBookings();
     }
-  }, [location.state]);
+  }, [location.state, userData]);
 
   // Filter bookings based on active tab
   const filteredBookings = bookings.filter(booking => {
-    const bookingDate = new Date(booking.date);
-    const today = new Date();
-    
     if (activeTab === 'upcoming') {
-      return booking.status === 'scheduled'; // Show all scheduled bookings regardless of date
+      return booking.status === 'pending' || booking.status === 'accepted' || booking.status === 'confirmed';
     } else if (activeTab === 'completed') {
-      return booking.status === 'completed';
+      return booking.status === 'completed' || booking.status === 'finished';
     } else if (activeTab === 'cancelled') {
-      return booking.status === 'cancelled';
+      return booking.status === 'cancelled' || booking.status === 'rejected' || booking.status === 'declined';
     } else if (activeTab === 'all') {
       return true;
     }
@@ -167,40 +144,81 @@ const BookingHistory = () => {
   });
 
   // Handle booking cancellation
-  const handleCancelBooking = () => {
-    // In a real app, you would send a cancellation request to your API
-    const updatedBookings = bookings.map(booking => 
-      booking.id === selectedBooking.id 
-        ? {...booking, status: 'cancelled', cancelReason} 
-        : booking
-    );
-    
-    setBookings(updatedBookings);
-    setCancelReason('');
-    setShowCancelModal(false);
-    setSelectedBooking(null);
-    
-    // Show success message
-    alert('Booking cancelled successfully');
+  const handleCancelBooking = async () => {
+    try {
+      const response = await fetch(`http://localhost:5000/api/bookings/${selectedBooking.id}/cancel`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${userData?.token || localStorage.getItem('token')}`
+        },
+        // credentials: 'include', // Temporarily removed due to CORS issue
+        body: JSON.stringify({
+          cancelReason: cancelReason
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to cancel booking: ${response.status}`);
+      }
+
+      // Update local state
+      const updatedBookings = bookings.map(booking => 
+        booking.id === selectedBooking.id 
+          ? {...booking, status: 'cancelled', cancelReason} 
+          : booking
+      );
+      
+      setBookings(updatedBookings);
+      setCancelReason('');
+      setShowCancelModal(false);
+      setSelectedBooking(null);
+      
+      alert('Booking cancelled successfully');
+    } catch (err) {
+      console.error('Error cancelling booking:', err);
+      alert('Failed to cancel booking. Please try again.');
+    }
   };
 
   // Handle submitting a review
-  const handleSubmitReview = () => {
-    // In a real app, you would send the review to your API
-    const updatedBookings = bookings.map(booking => 
-      booking.id === selectedBooking.id 
-        ? {...booking, rating: userRating, review: reviewText} 
-        : booking
-    );
-    
-    setBookings(updatedBookings);
-    setUserRating(0);
-    setReviewText('');
-    setShowReviewModal(false);
-    setSelectedBooking(null);
-    
-    // Show success message
-    alert('Review submitted successfully');
+  const handleSubmitReview = async () => {
+    try {
+      const response = await fetch(`http://localhost:5000/api/bookings/${selectedBooking.id}/review`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${userData?.token || localStorage.getItem('token')}`
+        },
+        // credentials: 'include', // Temporarily removed due to CORS issue
+        body: JSON.stringify({
+          rating: userRating,
+          review: reviewText
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to submit review: ${response.status}`);
+      }
+
+      // Update local state
+      const updatedBookings = bookings.map(booking => 
+        booking.id === selectedBooking.id 
+          ? {...booking, rating: userRating, review: reviewText} 
+          : booking
+      );
+      
+      setBookings(updatedBookings);
+      setUserRating(0);
+      setReviewText('');
+      setShowReviewModal(false);
+      setSelectedBooking(null);
+      
+      alert('Review submitted successfully');
+    } catch (err) {
+      console.error('Error submitting review:', err);
+      alert('Failed to submit review. Please try again.');
+    }
   };
 
   // Format date to readable string
@@ -219,9 +237,14 @@ const BookingHistory = () => {
   // Decide on status badge color
   const getStatusColor = (status) => {
     switch(status) {
-      case 'completed': return 'bg-green-500';
-      case 'scheduled': return 'bg-blue-500';
-      case 'cancelled': return 'bg-red-500';
+      case 'completed':
+      case 'finished': return 'bg-green-500';
+      case 'accepted':
+      case 'confirmed': return 'bg-green-600';
+      case 'pending': return 'bg-blue-500';
+      case 'cancelled':
+      case 'rejected':
+      case 'declined': return 'bg-red-500';
       default: return 'bg-gray-500';
     }
   };
@@ -252,6 +275,39 @@ const BookingHistory = () => {
       </div>
     );
   };
+
+  // Loading state
+  if (loading) {
+    return (
+      <div className="bg-greyIsh-50 p-6 rounded-lg max-w-6xl mx-auto my-10">
+        <h1 className="text-2xl font-bold mb-6">My Bookings</h1>
+        <div className="bg-white rounded-lg shadow-sm p-8 text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blueColor mx-auto mb-4"></div>
+          <p className="text-greyIsh-500">Loading your bookings...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Error state
+  if (error) {
+    return (
+      <div className="bg-greyIsh-50 p-6 rounded-lg max-w-6xl mx-auto my-10">
+        <h1 className="text-2xl font-bold mb-6">My Bookings</h1>
+        <div className="bg-white rounded-lg shadow-sm p-8 text-center">
+          <div className="text-red-500 text-6xl mb-4">⚠️</div>
+          <h3 className="text-xl font-semibold text-red-600 mb-2">Error Loading Bookings</h3>
+          <p className="text-greyIsh-500 mb-4">{error}</p>
+          <button
+            className="px-4 py-2 bg-blueColor text-white rounded-md hover:bg-blue-600"
+            onClick={fetchBookings}
+          >
+            Try Again
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="bg-greyIsh-50 p-6 rounded-lg max-w-6xl mx-auto my-10">
@@ -326,7 +382,7 @@ const BookingHistory = () => {
                       <span className={`text-xs ${getStatusColor(booking.status)} text-white px-2 py-1 rounded-full inline-block mt-2`}>
                         {booking.status.charAt(0).toUpperCase() + booking.status.slice(1)}
                       </span>
-                      {isToday(booking.date) && booking.status === 'scheduled' && (
+                      {isToday(booking.date) && (booking.status === 'pending' || booking.status === 'accepted') && (
                         <span className="ml-2 text-xs bg-orange-500 text-white px-2 py-1 rounded-full">
                           Today
                         </span>
@@ -389,7 +445,7 @@ const BookingHistory = () => {
                   View Details
                 </button>
                 
-                {booking.status === 'scheduled' && (
+                {(booking.status === 'pending' || booking.status === 'accepted') && (
                   <button 
                     className="px-3 py-1.5 border border-red-500 text-red-500 rounded hover:bg-red-50"
                     onClick={() => {
@@ -494,9 +550,23 @@ const BookingHistory = () => {
                 </div>
                 
                 <div className="flex items-center gap-3 text-greyIsh-600">
-                  <span className="text-blueColor">£</span>
-                  <span><strong>Price:</strong> £{selectedBooking.price.toFixed(2)}</span>
+                  <span className="text-blueColor">$</span>
+                  <span><strong>Price:</strong> ${selectedBooking.price.toFixed(2)}</span>
                 </div>
+                
+                {selectedBooking.referenceNumber && (
+                  <div className="flex items-center gap-3 text-greyIsh-600">
+                    <span className="text-blueColor">#</span>
+                    <span><strong>Reference:</strong> {selectedBooking.referenceNumber}</span>
+                  </div>
+                )}
+                
+                {selectedBooking.urgency && (
+                  <div className="flex items-center gap-3 text-greyIsh-600">
+                    <span className="text-blueColor">⚡</span>
+                    <span><strong>Urgency:</strong> {selectedBooking.urgency.charAt(0).toUpperCase() + selectedBooking.urgency.slice(1)}</span>
+                  </div>
+                )}
                 
                 {selectedBooking.rating && (
                   <div className="flex items-center gap-3 text-greyIsh-600">
@@ -517,6 +587,13 @@ const BookingHistory = () => {
                   </div>
                 )}
                 
+                {selectedBooking.cancelReason && (
+                  <div className="border-t pt-4 mt-4">
+                    <h3 className="font-semibold text-lg mb-2">Cancellation Reason</h3>
+                    <p className="text-greyIsh-600">{selectedBooking.cancelReason}</p>
+                  </div>
+                )}
+                
                 {selectedBooking.notes && (
                   <div className="border-t pt-4 mt-4">
                     <h3 className="font-semibold text-lg mb-2">Notes</h3>
@@ -530,8 +607,16 @@ const BookingHistory = () => {
                     <div className="flex flex-wrap gap-2">
                       {selectedBooking.images.map((image, index) => (
                         <div key={index} className="w-24 h-24 bg-greyIsh-200 rounded">
-                          {/* In a real app, you would display the actual image */}
-                          <div className="w-full h-full flex items-center justify-center text-greyIsh-500">
+                          <img 
+                            src={image} 
+                            alt={`Booking photo ${index + 1}`}
+                            className="w-full h-full object-cover rounded"
+                            onError={(e) => {
+                              e.target.style.display = 'none';
+                              e.target.nextSibling.style.display = 'flex';
+                            }}
+                          />
+                          <div className="w-full h-full flex items-center justify-center text-greyIsh-500" style={{display: 'none'}}>
                             Photo {index + 1}
                           </div>
                         </div>
@@ -542,7 +627,7 @@ const BookingHistory = () => {
               </div>
               
               <div className="mt-6 flex justify-end gap-2">
-                {selectedBooking.status === 'scheduled' && (
+                {(selectedBooking.status === 'pending' || selectedBooking.status === 'accepted') && (
                   <button 
                     className="px-4 py-2 border border-red-500 text-red-500 rounded hover:bg-red-50"
                     onClick={() => {
@@ -613,13 +698,13 @@ const BookingHistory = () => {
                     setCancelReason('');
                   }}
                 >
-                  No, Keep Booking
+                  Cancel
                 </button>
                 <button 
                   className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600"
                   onClick={handleCancelBooking}
                 >
-                  Yes, Cancel Booking
+                  Confirm Cancellation
                 </button>
               </div>
             </div>
@@ -634,27 +719,27 @@ const BookingHistory = () => {
             <div className="p-6">
               <h2 className="text-xl font-bold mb-4">Leave a Review</h2>
               <p className="mb-4 text-greyIsh-600">
-                How was your {selectedBooking.serviceTitle} service from {selectedBooking.providerName}?
+                Rate your experience with {selectedBooking.providerName}
               </p>
               
               <div className="mb-4">
-                <label className="block text-greyIsh-600 mb-2">
-                  Your Rating
-                </label>
-                <div className="p-2">
-                  <StarRating rating={userRating} setRating={setUserRating} editable={true} />
-                </div>
+                <label className="block text-greyIsh-600 mb-2">Rating</label>
+                <StarRating 
+                  rating={userRating} 
+                  setRating={setUserRating} 
+                  editable={true} 
+                />
               </div>
               
               <div className="mb-4">
                 <label className="block text-greyIsh-600 mb-2">
-                  Your Review (optional)
+                  Review (optional)
                 </label>
                 <textarea
                   value={reviewText}
                   onChange={(e) => setReviewText(e.target.value)}
                   className="w-full border rounded-md p-2 h-24"
-                  placeholder="Share your experience with this service..."
+                  placeholder="Share your experience..."
                 ></textarea>
               </div>
               

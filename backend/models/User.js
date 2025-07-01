@@ -47,7 +47,6 @@ const userSchema = new mongoose.Schema({
   },
   services: [{
     type: String,
-    enum: ['plumbing', 'electrical', 'hvac', 'roofing', 'painting', 'carpentry', 'cleaning', 'handyman', 'other']
   }],
   hourlyRate: {
     type: Number,
@@ -63,7 +62,6 @@ const userSchema = new mongoose.Schema({
   },
   services: [{
     type: String,
-    enum: ['plumbing', 'electrical', 'hvac', 'roofing', 'painting', 'carpentry', 'cleaning', 'handyman', 'other']
   }],
   hourlyRate: {
     type: Number,

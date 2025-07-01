@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { FaUser, FaEnvelope, FaPhone, FaMapMarkerAlt, FaLock, FaSave, FaBell, FaEye, FaEyeSlash } from 'react-icons/fa';
+import React, { useState, useEffect } from 'react';
+import { FaUser, FaEnvelope, FaPhone, FaMapMarkerAlt, FaLock, FaSave, FaBell, FaEye, FaEyeSlash, FaSpinner } from 'react-icons/fa';
 import { BiCog } from 'react-icons/bi';
 import { useUser } from '../../context/UserContext';
 
@@ -12,6 +12,32 @@ const UserProfile = () => {
   
   // State for edit mode
   const [editMode, setEditMode] = useState(false);
+  
+  // API states
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+  
+  // Profile data from API
+  const [profileData, setProfileData] = useState({
+    fullName: '',
+    email: '',
+    phone: '',
+    address: {
+      street: '',
+      city: '',
+      state: '',
+      zipCode: ''
+    },
+    userType: '',
+    businessName: '',
+    services: [],
+    hourlyRate: '',
+    isActive: false,
+    isVerified: false,
+    rating: 0
+  });
   
   // State for password modal
   const [showPasswordModal, setShowPasswordModal] = useState(false);
@@ -26,6 +52,112 @@ const UserProfile = () => {
     confirm: false
   });
   const [passwordError, setPasswordError] = useState('');
+
+  // Get current user from localStorage
+  const getCurrentUser = () => {
+    const user = localStorage.getItem('user');
+    return user ? JSON.parse(user) : null;
+  };
+
+  // Get token from localStorage
+  const getToken = () => {
+    return localStorage.getItem('token');
+  };
+
+  // API request helper
+  const apiRequest = async (endpoint, options = {}) => {
+    const token = getToken();
+    const config = {
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token && { Authorization: `Bearer ${token}` }),
+        ...options.headers,
+      },
+      ...options,
+    };
+
+    try {
+      const response = await fetch(`http://localhost:5000/api${endpoint}`, config);
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || `HTTP error! status: ${response.status}`);
+      }
+
+      return data;
+    } catch (error) {
+      console.error('API Request Error:', error);
+      throw error;
+    }
+  };
+
+  // Fetch user profile
+  const fetchProfile = async () => {
+    try {
+      setLoading(true);
+      setError('');
+      
+      const user = getCurrentUser();
+      if (!user || !user._id) {
+        throw new Error('No authenticated user found');
+      }
+
+      const response = await apiRequest(`/auth/profile/${user._id}`);
+      
+      if (response.success) {
+        setProfileData(response.user);
+      }
+    } catch (error) {
+      setError(error.message || 'Failed to fetch profile');
+      console.error('Fetch profile error:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Update user profile
+  const updateProfile = async (updateData) => {
+    try {
+      setSaving(true);
+      setError('');
+      setSuccess('');
+
+      const user = getCurrentUser();
+      if (!user || !user._id) {
+        throw new Error('No authenticated user found');
+      }
+
+      const response = await apiRequest(`/auth/profile/${user._id}`, {
+        method: 'PUT',
+        body: JSON.stringify(updateData),
+      });
+
+      if (response.success) {
+        setProfileData(response.user);
+        setSuccess('Profile updated successfully!');
+        
+        // Update user in localStorage
+        const updatedUserData = { ...user, ...response.user };
+        localStorage.setItem('user', JSON.stringify(updatedUserData));
+        
+        // Clear success message after 3 seconds
+        setTimeout(() => setSuccess(''), 3000);
+        
+        return true;
+      }
+    } catch (error) {
+      setError(error.message || 'Failed to update profile');
+      console.error('Update profile error:', error);
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Fetch profile on component mount
+  useEffect(() => {
+    fetchProfile();
+  }, []);
 
   // Handle service preference toggles
   const handleServiceToggle = (service) => {
@@ -95,7 +227,8 @@ const UserProfile = () => {
       confirmPassword: ''
     });
     
-    alert('Password updated successfully!');
+    setSuccess('Password updated successfully!');
+    setTimeout(() => setSuccess(''), 3000);
   };
 
   // Handle profile image upload
@@ -111,22 +244,95 @@ const UserProfile = () => {
   };
 
   // Handle form submission
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    // Here you would typically send the data to your API
-    console.log('Saving user data:', userData);
-    setEditMode(false);
-    alert('Profile updated successfully!');
+    
+    // Prepare update data based on active tab
+    let updateData = {};
+    
+    if (activeTab === 'personalInfo') {
+      // Get the form values from the current profile data and user inputs
+      const form = e.target;
+      const formData = new FormData(form);
+      
+      updateData = {
+        fullName: formData.get('fullName') || profileData.fullName,
+        phone: formData.get('phone') || profileData.phone,
+        address: {
+          street: formData.get('street') || profileData.address?.street || '',
+          city: formData.get('city') || profileData.address?.city || '',
+          state: formData.get('state') || profileData.address?.state || '',
+          zipCode: formData.get('zipCode') || profileData.address?.zipCode || ''
+        }
+      };
+
+      // Add professional fields if user is a professional
+      if (profileData.userType === 'professional') {
+        updateData.businessName = formData.get('businessName') || profileData.businessName;
+        const hourlyRate = formData.get('hourlyRate');
+        if (hourlyRate) {
+          updateData.hourlyRate = parseFloat(hourlyRate);
+        }
+        // Note: services would need separate handling as they're checkboxes
+      }
+    }
+    
+    const success = await updateProfile(updateData);
+    if (success) {
+      setEditMode(false);
+    }
+  };
+
+  // Handle input changes for profile data
+  const handleProfileInputChange = (field, value) => {
+    if (field.includes('.')) {
+      const [parent, child] = field.split('.');
+      setProfileData(prev => ({
+        ...prev,
+        [parent]: {
+          ...prev[parent],
+          [child]: value
+        }
+      }));
+    } else {
+      setProfileData(prev => ({
+        ...prev,
+        [field]: value
+      }));
+    }
   };
 
   // List of available services (would typically come from your API/Data)
   const availableServices = [
-    'Carpentry', 'Plumbing', 'Electrical', 'Interior Design', 
-    'House Painting', 'Lawn Care', 'HVAC', 'Home Security'
+    'plumbing', 'electrical', 'hvac', 'roofing', 'painting', 
+    'carpentry', 'cleaning', 'handyman', 'other'
   ];
+
+  // Loading state
+  if (loading) {
+    return (
+      <div className="flex justify-center items-center min-h-screen">
+        <FaSpinner className="animate-spin text-4xl text-blueColor" />
+        <span className="ml-3 text-lg">Loading profile...</span>
+      </div>
+    );
+  }
 
   return (
     <div className="bg-greyIsh-50 p-8 rounded-lg shadow-md max-w-4xl mx-auto my-10">
+      {/* Messages */}
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-600 rounded-md p-4 mb-4">
+          {error}
+        </div>
+      )}
+      
+      {success && (
+        <div className="bg-green-50 border border-green-200 text-green-600 rounded-md p-4 mb-4">
+          {success}
+        </div>
+      )}
+
       <div className="flex flex-col md:flex-row gap-8">
         {/* Profile Sidebar */}
         <div className="md:w-1/3">
@@ -157,8 +363,29 @@ const UserProfile = () => {
               )}
             </div>
             
-            <h2 className="text-xl font-bold">{userData.personalInfo.fullName}</h2>
-            <p className="text-greyIsh-500 mb-6">{userData.personalInfo.email}</p>
+            <h2 className="text-xl font-bold">{profileData.fullName || 'No Name'}</h2>
+            <p className="text-greyIsh-500 mb-2">{profileData.email}</p>
+            <p className="text-sm text-greyIsh-400 capitalize mb-6">{profileData.userType}</p>
+            
+            {/* Account Status */}
+            <div className="w-full mb-4 text-sm">
+              <div className="flex justify-between items-center mb-2">
+                <span>Status:</span>
+                <span className={`px-2 py-1 rounded text-xs ${profileData.isActive ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                  {profileData.isActive ? 'Active' : 'Inactive'}
+                </span>
+              </div>
+              {/* <div className="flex justify-between items-center mb-2">
+                <span>Verified:</span>
+                <span className={`px-2 py-1 rounded text-xs ${profileData.isVerified ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>
+                  {profileData.isVerified ? 'Verified' : 'Pending'}
+                </span>
+              </div> */}
+              <div className="flex justify-between items-center">
+                <span>Rating:</span>
+                <span>{profileData.rating || 0}/5</span>
+              </div>
+            </div>
             
             <div className="w-full">
               <button
@@ -204,10 +431,12 @@ const UserProfile = () => {
                 </button>
               ) : (
                 <button 
-                  className="bg-green-500 text-white py-2 px-4 rounded-md flex items-center gap-2"
+                  className="bg-green-500 text-white py-2 px-4 rounded-md flex items-center gap-2 disabled:opacity-50"
                   onClick={handleSubmit}
+                  disabled={saving}
                 >
-                  <FaSave /> Save Changes
+                  {saving ? <FaSpinner className="animate-spin" /> : <FaSave />} 
+                  {saving ? 'Saving...' : 'Save Changes'}
                 </button>
               )}
             </div>
@@ -224,10 +453,11 @@ const UserProfile = () => {
                       </span>
                       <input
                         type="text"
-                        value={userData.personalInfo.fullName}
-                        onChange={(e) => updateUserData('personalInfo', 'fullName', e.target.value)}
+                        name="fullName"
+                        value={profileData.fullName}
+                        onChange={(e) => handleProfileInputChange('fullName', e.target.value)}
                         disabled={!editMode}
-                        className="flex-1 p-2 outline-none"
+                        className="flex-1 p-2 outline-none disabled:bg-gray-50"
                       />
                     </div>
                   </div>
@@ -240,12 +470,12 @@ const UserProfile = () => {
                       </span>
                       <input
                         type="email"
-                        value={userData.personalInfo.email}
-                        onChange={(e) => updateUserData('personalInfo', 'email', e.target.value)}
-                        disabled={!editMode}
-                        className="flex-1 p-2 outline-none"
+                        value={profileData.email}
+                        disabled={true}
+                        className="flex-1 p-2 outline-none bg-gray-100 text-gray-500"
                       />
                     </div>
+                    <small className="text-gray-500">Email cannot be changed</small>
                   </div>
                   
                   <div className="mb-4">
@@ -256,29 +486,123 @@ const UserProfile = () => {
                       </span>
                       <input
                         type="tel"
-                        value={userData.personalInfo.phone}
-                        onChange={(e) => updateUserData('personalInfo', 'phone', e.target.value)}
+                        name="phone"
+                        value={profileData.phone}
+                        onChange={(e) => handleProfileInputChange('phone', e.target.value)}
                         disabled={!editMode}
-                        className="flex-1 p-2 outline-none"
+                        className="flex-1 p-2 outline-none disabled:bg-gray-50"
                       />
                     </div>
                   </div>
                   
                   <div className="mb-4">
-                    <label className="block text-greyIsh-600 mb-2">Address</label>
+                    <label className="block text-greyIsh-600 mb-2">Street Address</label>
                     <div className="flex border rounded-md overflow-hidden">
                       <span className="bg-greyIsh-100 p-2 flex items-center">
                         <FaMapMarkerAlt className="text-greyIsh-500" />
                       </span>
-                      <textarea
-                        value={userData.personalInfo.address}
-                        onChange={(e) => updateUserData('personalInfo', 'address', e.target.value)}
+                      <input
+                        type="text"
+                        name="street"
+                        value={profileData.address?.street || ''}
+                        onChange={(e) => handleProfileInputChange('address.street', e.target.value)}
                         disabled={!editMode}
-                        className="flex-1 p-2 outline-none"
-                        rows="3"
+                        className="flex-1 p-2 outline-none disabled:bg-gray-50"
+                        placeholder="Enter street address"
                       />
                     </div>
                   </div>
+
+                  <div className="grid grid-cols-2 gap-4 mb-4">
+                    <div>
+                      <label className="block text-greyIsh-600 mb-2">City</label>
+                      <input
+                        type="text"
+                        name="city"
+                        value={profileData.address?.city || ''}
+                        onChange={(e) => handleProfileInputChange('address.city', e.target.value)}
+                        disabled={!editMode}
+                        className="w-full p-2 border rounded-md outline-none disabled:bg-gray-50"
+                        placeholder="Enter city"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-greyIsh-600 mb-2">State</label>
+                      <input
+                        type="text"
+                        name="state"
+                        value={profileData.address?.state || ''}
+                        onChange={(e) => handleProfileInputChange('address.state', e.target.value)}
+                        disabled={!editMode}
+                        className="w-full p-2 border rounded-md outline-none disabled:bg-gray-50"
+                        placeholder="Enter state"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="mb-4">
+                    <label className="block text-greyIsh-600 mb-2">Zip Code</label>
+                    <input
+                      type="text"
+                      name="zipCode"
+                      value={profileData.address?.zipCode || ''}
+                      onChange={(e) => handleProfileInputChange('address.zipCode', e.target.value)}
+                      disabled={!editMode}
+                      className="w-full p-2 border rounded-md outline-none disabled:bg-gray-50"
+                      placeholder="Enter zip code"
+                    />
+                  </div>
+
+                  {/* Professional fields */}
+                  {profileData.userType === 'professional' && (
+                    <>
+                      <div className="mb-4">
+                        <label className="block text-greyIsh-600 mb-2">Business Name</label>
+                        <input
+                          type="text"
+                          name="businessName"
+                          value={profileData.businessName || ''}
+                          onChange={(e) => handleProfileInputChange('businessName', e.target.value)}
+                          disabled={!editMode}
+                          className="w-full p-2 border rounded-md outline-none disabled:bg-gray-50"
+                          placeholder="Enter business name"
+                        />
+                      </div>
+
+                      <div className="mb-4">
+                        <label className="block text-greyIsh-600 mb-2">Hourly Rate ($)</label>
+                        <input
+                          type="number"
+                          name="hourlyRate"
+                          value={profileData.hourlyRate || ''}
+                          onChange={(e) => handleProfileInputChange('hourlyRate', e.target.value)}
+                          disabled={!editMode}
+                          className="w-full p-2 border rounded-md outline-none disabled:bg-gray-50"
+                          placeholder="Enter hourly rate"
+                          min="0"
+                          step="0.01"
+                        />
+                      </div>
+
+                      <div className="mb-4">
+                        <label className="block text-greyIsh-600 mb-2">Services Offered</label>
+                        {profileData.services && profileData.services.length > 0 ? (
+                          <div className="flex flex-wrap gap-2">
+                            {profileData.services.map(service => (
+                              <span 
+                                key={service} 
+                                className="px-2 py-1 bg-blueColor text-white text-sm rounded capitalize"
+                              >
+                                {service}
+                              </span>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-gray-500">No services selected</p>
+                        )}
+                      </div>
+                    </>
+                  )}
                 </div>
               )}
               
@@ -354,7 +678,7 @@ const UserProfile = () => {
                             disabled={!editMode}
                             className="w-4 h-4 accent-blueColor"
                           />
-                          <label htmlFor={`service-${service}`}>{service}</label>
+                          <label htmlFor={`service-${service}`} className="capitalize">{service}</label>
                         </div>
                       ))}
                     </div>
@@ -510,7 +834,15 @@ const UserProfile = () => {
                               <button
                                 type="button"
                                 className="border border-greyIsh-300 px-4 py-2 rounded-md hover:bg-greyIsh-100"
-                                onClick={() => setShowPasswordModal(false)}
+                                onClick={() => {
+                                  setShowPasswordModal(false);
+                                  setPasswordData({
+                                    currentPassword: '',
+                                    newPassword: '',
+                                    confirmPassword: ''
+                                  });
+                                  setPasswordError('');
+                                }}
                               >
                                 Cancel
                               </button>

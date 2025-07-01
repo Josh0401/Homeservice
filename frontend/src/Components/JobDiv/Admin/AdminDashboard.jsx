@@ -193,6 +193,14 @@ const AdminDashboard = () => {
               <FaUserShield size={22} className="mr-2" />
               <span>Admin</span>
             </Link>
+            <Link to="/admin/create-service" className="flex items-center text-white hover:text-indigo-200">
+              <FaClipboardList size={22} className="mr-2" />
+              <span>Services</span>
+            </Link>
+            <Link to="/admin/create-service-category" className="flex items-center text-white hover:text-indigo-200">
+              <FaClipboardList size={22} className="mr-2" />
+              <span>Service Category</span>
+            </Link>
           </div>
         </div>
         
