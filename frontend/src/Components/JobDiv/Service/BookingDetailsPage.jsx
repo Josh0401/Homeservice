@@ -9,12 +9,12 @@ import {
   FaTools,
   FaPhone,
   FaEnvelope,
-  FaComment,
   FaCheck,
   FaTimes,
   FaHistory,
   FaSpinner,
-  FaExclamationTriangle
+  FaExclamationTriangle,
+  FaPlay
 } from 'react-icons/fa';
 
 const BookingDetailsPage = () => {
@@ -24,8 +24,6 @@ const BookingDetailsPage = () => {
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(false);
   const [error, setError] = useState('');
-  const [message, setMessage] = useState('');
-  const [messageHistory, setMessageHistory] = useState([]);
 
   // Get token from localStorage
   const getToken = () => {
@@ -107,29 +105,11 @@ const BookingDetailsPage = () => {
             paymentStatus: bookingData.paymentStatus,
             createdAt: bookingData.createdAt,
             updatedAt: bookingData.updatedAt,
-            statusHistory: bookingData.statusHistory || [],
-            messages: bookingData.messages || []
+            statusHistory: bookingData.statusHistory || []
           };
           
           console.log('Transformed booking data:', transformedBooking);
           setBooking(transformedBooking);
-          
-          // Set up message history from API or initialize with booking info
-          if (bookingData.messages && Array.isArray(bookingData.messages)) {
-            setMessageHistory(bookingData.messages);
-          } else {
-            // Initialize with a welcome message based on booking status
-            const initialMessages = [];
-            if (transformedBooking.status === 'accepted' || transformedBooking.status === 'confirmed') {
-              initialMessages.push({
-                id: 1,
-                sender: 'provider',
-                content: 'Thank you for choosing our services. I will contact you before the scheduled time.',
-                timestamp: transformedBooking.updatedAt || new Date().toISOString()
-              });
-            }
-            setMessageHistory(initialMessages);
-          }
           
         } else {
           throw new Error('Booking not found or invalid response');
@@ -147,102 +127,239 @@ const BookingDetailsPage = () => {
     }
   }, [id]);
 
-  // Send a message (Note: This would require a messaging API endpoint)
-  const handleSendMessage = async () => {
-    if (message.trim()) {
-      try {
-        // For now, add message locally
-        // In a real implementation, you'd send this to a messaging API
-        const newMessage = {
-          id: Date.now(),
-          sender: 'provider',
-          content: message,
-          timestamp: new Date().toISOString()
-        };
-        
-        setMessageHistory([...messageHistory, newMessage]);
-        setMessage('');
-        
-        // TODO: Implement actual messaging API call
-        // const response = await apiRequest(`/bookings/${id}/messages`, {
-        //   method: 'POST',
-        //   body: JSON.stringify({ content: message })
-        // });
-        
-      } catch (error) {
-        console.error('Error sending message:', error);
-        alert('Failed to send message. Please try again.');
-      }
-    }
-  };
-
-  // Update booking status
-  const updateBookingStatus = async (newStatus) => {
+  // Enhanced status update with better error handling and user feedback
+  const updateBookingStatus = async (newStatus, options = {}) => {
     try {
       setUpdating(true);
+      setError(''); // Clear any previous errors
+      
       console.log(`Updating booking ${id} status to:`, newStatus);
+      
+      // Validate status transition
+      const validTransitions = {
+        'pending': ['accepted', 'declined'],
+        'accepted': ['completed', 'cancelled', 'in-progress'],
+        'confirmed': ['completed', 'cancelled', 'in-progress'],
+        'in-progress': ['completed', 'cancelled']
+      };
+      
+      if (!validTransitions[booking.status]?.includes(newStatus)) {
+        throw new Error(`Cannot change status from ${booking.status} to ${newStatus}`);
+      }
+      
+      // Prepare request payload
+      const payload = {
+        status: newStatus,
+        ...options.additionalData
+      };
+      
+      // Add completion notes if marking as complete
+      if (newStatus === 'completed' && options.completionNotes) {
+        payload.completionNotes = options.completionNotes;
+      }
+      
+      // Add cancellation reason if cancelling
+      if (newStatus === 'cancelled' && options.cancellationReason) {
+        payload.cancellationReason = options.cancellationReason;
+      }
       
       const response = await apiRequest(`/bookings/${id}/status`, {
         method: 'PATCH',
-        body: JSON.stringify({ status: newStatus })
+        body: JSON.stringify(payload)
       });
 
       if (response.success) {
-        // Update local state
-        setBooking({
+        // Update local state with server response
+        const updatedBooking = {
           ...booking,
           status: newStatus,
-          updatedAt: new Date().toISOString()
+          updatedAt: new Date().toISOString(),
+          // Add any additional fields from server response
+          ...(response.booking || {})
+        };
+        
+        // Add to status history if not already there
+        if (!updatedBooking.statusHistory) {
+          updatedBooking.statusHistory = [];
+        }
+        updatedBooking.statusHistory.push({
+          status: newStatus,
+          timestamp: new Date().toISOString(),
+          note: options.note || ''
         });
         
-        // Add a message about the status change
-        const statusMessage = {
-          id: Date.now(),
-          sender: 'system',
-          content: `Booking status updated to: ${newStatus}`,
-          timestamp: new Date().toISOString()
-        };
-        setMessageHistory([...messageHistory, statusMessage]);
+        setBooking(updatedBooking);
         
-        console.log('Booking status updated successfully');
-        alert(`Booking ${newStatus} successfully!`);
+        // Show success message
+        const successMessages = {
+          'accepted': 'Booking accepted successfully!',
+          'declined': 'Booking declined successfully!',
+          'completed': 'Booking marked as completed!',
+          'cancelled': 'Booking cancelled successfully!',
+          'in-progress': 'Booking status updated to in-progress!'
+        };
+        
+        alert(successMessages[newStatus] || `Booking ${newStatus} successfully!`);
+        
+        // Optional: Refresh data from server to ensure consistency
+        if (options.refreshData) {
+          setTimeout(() => {
+            window.location.reload();
+          }, 1000);
+        }
+        
       } else {
         throw new Error(response.message || 'Failed to update booking status');
       }
+      
     } catch (error) {
       console.error('Error updating booking status:', error);
-      alert(`Failed to update booking status: ${error.message}`);
+      setError(error.message);
+      
+      // Show user-friendly error messages
+      const errorMessages = {
+        'Network Error': 'Please check your internet connection and try again.',
+        'Unauthorized': 'Your session has expired. Please login again.',
+        'Forbidden': 'You do not have permission to perform this action.',
+        'Not Found': 'Booking not found. It may have been deleted.',
+        'Conflict': 'This booking has already been updated by someone else.'
+      };
+      
+      const userMessage = errorMessages[error.message] || `Failed to update booking: ${error.message}`;
+      alert(userMessage);
+      
     } finally {
       setUpdating(false);
     }
   };
 
-  // Cancel booking
-  const handleCancelBooking = () => {
-    if (window.confirm('Are you sure you want to cancel this booking?')) {
-      updateBookingStatus('cancelled');
+  // Enhanced completion handler with optional notes
+  const handleCompleteBooking = async () => {
+    const confirmed = window.confirm(
+      'Mark this booking as completed?\n\nThis will finalize the service and process payment.'
+    );
+    
+    if (confirmed) {
+      // Optional: Ask for completion notes
+      const completionNotes = prompt('Add any completion notes (optional):');
+      
+      await updateBookingStatus('completed', {
+        completionNotes: completionNotes?.trim() || '',
+        note: 'Service completed successfully',
+        additionalData: {
+          completedAt: new Date().toISOString()
+        }
+      });
     }
   };
 
-  // Complete booking
-  const handleCompleteBooking = () => {
-    if (window.confirm('Mark this booking as completed?')) {
-      updateBookingStatus('completed');
+  // Enhanced cancellation handler with reason
+  const handleCancelBooking = async () => {
+    const confirmed = window.confirm(
+      'Are you sure you want to cancel this booking?\n\nThis action cannot be undone.'
+    );
+    
+    if (confirmed) {
+      // Ask for cancellation reason
+      const cancellationReason = prompt('Please provide a reason for cancellation:');
+      
+      if (cancellationReason?.trim()) {
+        await updateBookingStatus('cancelled', {
+          cancellationReason: cancellationReason.trim(),
+          note: `Cancelled: ${cancellationReason.trim()}`,
+          additionalData: {
+            cancelledAt: new Date().toISOString()
+          }
+        });
+      } else {
+        alert('Cancellation reason is required.');
+      }
     }
   };
 
-  // Accept booking (for pending bookings)
-  const handleAcceptBooking = () => {
-    if (window.confirm('Accept this booking?')) {
-      updateBookingStatus('accepted');
+  // Enhanced accept handler
+  const handleAcceptBooking = async () => {
+    const confirmed = window.confirm(
+      'Accept this booking?\n\nYou will be committed to providing this service.'
+    );
+    
+    if (confirmed) {
+      await updateBookingStatus('accepted', {
+        note: 'Booking accepted by service provider',
+        additionalData: {
+          acceptedAt: new Date().toISOString()
+        }
+      });
     }
   };
 
-  // Decline booking (for pending bookings)
-  const handleDeclineBooking = () => {
-    if (window.confirm('Decline this booking?')) {
-      updateBookingStatus('declined');
+  // Enhanced decline handler with reason
+  const handleDeclineBooking = async () => {
+    const confirmed = window.confirm('Decline this booking?');
+    
+    if (confirmed) {
+      const declineReason = prompt('Please provide a reason for declining (optional):');
+      
+      await updateBookingStatus('declined', {
+        note: declineReason?.trim() ? `Declined: ${declineReason.trim()}` : 'Booking declined',
+        additionalData: {
+          declinedAt: new Date().toISOString(),
+          declineReason: declineReason?.trim() || ''
+        }
+      });
     }
+  };
+
+  // Handler for starting work (in-progress)
+  const handleStartWork = async () => {
+    const confirmed = window.confirm('Start working on this booking?');
+    
+    if (confirmed) {
+      await updateBookingStatus('in-progress', {
+        note: 'Work started on booking',
+        additionalData: {
+          startedAt: new Date().toISOString()
+        }
+      });
+    }
+  };
+
+  // Utility function to check if status update is allowed
+  const canUpdateStatus = (currentStatus, targetStatus) => {
+    const validTransitions = {
+      'pending': ['accepted', 'declined'],
+      'accepted': ['completed', 'cancelled', 'in-progress'],
+      'confirmed': ['completed', 'cancelled', 'in-progress'],
+      'in-progress': ['completed', 'cancelled']
+    };
+    
+    return validTransitions[currentStatus]?.includes(targetStatus) || false;
+  };
+
+  // Function to get next available status options
+  const getAvailableStatusOptions = (currentStatus) => {
+    const transitions = {
+      'pending': [
+        { status: 'accepted', label: 'Accept', color: 'green', icon: 'FaCheck' },
+        { status: 'declined', label: 'Decline', color: 'red', icon: 'FaTimes' }
+      ],
+      'accepted': [
+        { status: 'in-progress', label: 'Start Work', color: 'blue', icon: 'FaPlay' },
+        { status: 'completed', label: 'Complete', color: 'green', icon: 'FaCheck' },
+        { status: 'cancelled', label: 'Cancel', color: 'red', icon: 'FaTimes' }
+      ],
+      'confirmed': [
+        { status: 'in-progress', label: 'Start Work', color: 'blue', icon: 'FaPlay' },
+        { status: 'completed', label: 'Complete', color: 'green', icon: 'FaCheck' },
+        { status: 'cancelled', label: 'Cancel', color: 'red', icon: 'FaTimes' }
+      ],
+      'in-progress': [
+        { status: 'completed', label: 'Complete', color: 'green', icon: 'FaCheck' },
+        { status: 'cancelled', label: 'Cancel', color: 'red', icon: 'FaTimes' }
+      ]
+    };
+    
+    return transitions[currentStatus] || [];
   };
 
   // Format date
@@ -250,13 +367,6 @@ const BookingDetailsPage = () => {
     if (!dateString) return 'Date not specified';
     const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
     return new Date(dateString).toLocaleDateString(undefined, options);
-  };
-
-  // Format time (for message timestamps)
-  const formatTime = (isoString) => {
-    if (!isoString) return '';
-    const date = new Date(isoString);
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
 
   // Format timeline date
@@ -272,6 +382,7 @@ const BookingDetailsPage = () => {
       case 'pending': return 'bg-yellow-500';
       case 'accepted': 
       case 'confirmed': return 'bg-blue-500';
+      case 'in-progress': return 'bg-purple-500';
       case 'completed': return 'bg-green-500';
       case 'cancelled': 
       case 'declined': return 'bg-red-500';
@@ -285,6 +396,7 @@ const BookingDetailsPage = () => {
       case 'pending': return 'bg-yellow-500';
       case 'accepted':
       case 'confirmed': return 'bg-blue-500';
+      case 'in-progress': return 'bg-purple-500';
       case 'completed': return 'bg-green-500';
       case 'cancelled':
       case 'declined': return 'bg-red-500';
@@ -368,6 +480,37 @@ const BookingDetailsPage = () => {
             )}
             
             {(booking.status === 'accepted' || booking.status === 'confirmed') && (
+              <>
+                <button 
+                  onClick={handleStartWork}
+                  disabled={updating}
+                  className="px-3 py-1 bg-purple-500 text-white rounded hover:bg-purple-600 flex items-center disabled:opacity-50"
+                >
+                  {updating ? <FaSpinner className="animate-spin mr-1" /> : <FaPlay className="mr-1" />}
+                  Start Work
+                </button>
+                
+                <button 
+                  onClick={handleCompleteBooking}
+                  disabled={updating}
+                  className="px-3 py-1 bg-green-500 text-white rounded hover:bg-green-600 flex items-center disabled:opacity-50"
+                >
+                  {updating ? <FaSpinner className="animate-spin mr-1" /> : <FaCheck className="mr-1" />}
+                  Mark Complete
+                </button>
+                
+                <button 
+                  onClick={handleCancelBooking}
+                  disabled={updating}
+                  className="px-3 py-1 bg-red-500 text-white rounded hover:bg-red-600 flex items-center disabled:opacity-50"
+                >
+                  {updating ? <FaSpinner className="animate-spin mr-1" /> : <FaTimes className="mr-1" />}
+                  Cancel
+                </button>
+              </>
+            )}
+
+            {booking.status === 'in-progress' && (
               <>
                 <button 
                   onClick={handleCompleteBooking}
@@ -465,7 +608,7 @@ const BookingDetailsPage = () => {
                   </div>
                   
                   <div className="flex items-start mb-4">
-                    <FaComment className="text-blueColor mt-1 mr-3" />
+                    <FaClock className="text-blueColor mt-1 mr-3" />
                     <div>
                       <h3 className="font-medium">Notes</h3>
                       <p className="text-gray-600">{booking.notes || 'No additional notes'}</p>
@@ -491,65 +634,8 @@ const BookingDetailsPage = () => {
               </div>
             </div>
             
-            {/* Messages */}
-            <div className="bg-white rounded-lg shadow-md p-6">
-              <h2 className="text-xl font-semibold mb-6 flex items-center">
-                <FaComment className="mr-2 text-blueColor" />
-                Messages
-              </h2>
-              
-              <div className="mb-6 max-h-80 overflow-y-auto">
-                {messageHistory.length > 0 ? (
-                  <div className="space-y-4">
-                    {messageHistory.map(msg => (
-                      <div 
-                        key={msg.id} 
-                        className={`flex ${msg.sender === 'provider' ? 'justify-end' : msg.sender === 'system' ? 'justify-center' : 'justify-start'}`}
-                      >
-                        <div className={`max-w-xs sm:max-w-md rounded-lg p-3 ${
-                          msg.sender === 'provider' ? 'bg-blueColor text-white' : 
-                          msg.sender === 'system' ? 'bg-gray-200 text-gray-700 text-sm' :
-                          'bg-gray-100'
-                        }`}>
-                          <p>{msg.content}</p>
-                          <p className={`text-xs mt-1 ${
-                            msg.sender === 'provider' ? 'text-blue-100' : 'text-gray-500'
-                          }`}>
-                            {formatTime(msg.timestamp)}
-                          </p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="text-center py-8 text-gray-500">
-                    No messages yet
-                  </div>
-                )}
-              </div>
-              
-              {booking.status !== 'cancelled' && booking.status !== 'declined' && (
-                <div className="flex">
-                  <input
-                    type="text"
-                    value={message}
-                    onChange={(e) => setMessage(e.target.value)}
-                    placeholder="Type your message..."
-                    className="flex-1 border rounded-l-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blueColor"
-                    onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
-                  />
-                  <button
-                    onClick={handleSendMessage}
-                    className="bg-blueColor text-white px-4 py-2 rounded-r-lg hover:bg-blue-600"
-                  >
-                    Send
-                  </button>
-                </div>
-              )}
-            </div>
-            
             {/* Activity Timeline */}
-            <div className="mt-8">
+            <div className="bg-white rounded-lg shadow-md p-6">
               <h3 className="font-medium text-gray-700 mb-4 flex items-center">
                 <FaHistory className="mr-2 text-blueColor" /> Booking Timeline
               </h3>

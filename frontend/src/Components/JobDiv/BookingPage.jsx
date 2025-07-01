@@ -1,22 +1,80 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { FaArrowLeft, FaUserCircle } from 'react-icons/fa';
+import { FaArrowLeft, FaUserCircle, FaTimes } from 'react-icons/fa';
 import { MdDateRange, MdAccessTime, MdHome, MdPerson, MdEmail, MdPhone } from 'react-icons/md';
 import { fetchProfessionals, transformProfessionalsData, createBooking } from '../../utils/apiService';
 
-// Fetch services specific to the selected professional
+// Cancel existing booking via PATCH API
+const cancelExistingBooking = async (bookingId) => {
+  try {
+    const token = localStorage.getItem('authToken') || 
+                 localStorage.getItem('token') || 
+                 localStorage.getItem('accessToken');
+    
+    if (!token) {
+      throw new Error('Authentication required to cancel booking');
+    }
+
+    const response = await fetch(`http://localhost:5000/api/bookings/${bookingId}/status`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({
+        status: 'cancelled',
+        cancelledAt: new Date().toISOString(),
+        cancelledBy: 'client'
+      })
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
+    }
+
+    const result = await response.json();
+    return result;
+  } catch (error) {
+    console.error('Failed to cancel booking via API:', error);
+    throw error;
+  }
+};
+
+// Fetch services from the main services API and filter by professional
 const fetchProfessionalServicesLocal = async (professionalId) => {
   try {
-    const response = await fetch(`http://localhost:5000/api/services/professional/${professionalId}`);
+    console.log('Fetching services for professional:', professionalId);
+    
+    // Use the main services API endpoint
+    const response = await fetch('http://localhost:5000/api/services');
+    
     if (!response.ok) {
-      // If professional-specific endpoint doesn't exist, try general services with filter
-      const fallbackResponse = await fetch(`http://localhost:5000/api/services?professionalId=${professionalId}`);
-      if (!fallbackResponse.ok) {
-        throw new Error(`Failed to fetch professional services: ${response.status}`);
-      }
-      return await fallbackResponse.json();
+      throw new Error(`Failed to fetch services: ${response.status}`);
     }
-    return await response.json();
+    
+    const data = await response.json();
+    console.log('Services API response:', data);
+    
+    if (!data.success || !Array.isArray(data.services)) {
+      throw new Error('Invalid services API response format');
+    }
+    
+    // Filter services by the current professional
+    const professionalServices = data.services.filter(service => {
+      const serviceProviderId = service.provider?._id || service.provider?.id || service.providerId;
+      return serviceProviderId === professionalId;
+    });
+    
+    console.log(`Found ${professionalServices.length} services for professional ${professionalId}`);
+    console.log('Professional services:', professionalServices);
+    
+    return {
+      success: true,
+      services: professionalServices,
+      count: professionalServices.length
+    };
+    
   } catch (error) {
     console.error('Failed to fetch professional services:', error);
     throw error;
@@ -79,6 +137,91 @@ const BookingPage = () => {
   // Set minimum date to today
   const today = new Date().toISOString().split('T')[0];
   
+  // Get booking ID from URL params if this is an edit/cancel scenario
+  const bookingId = useParams().bookingId || location.state?.bookingId;
+  
+  // Handle cancel booking - supports both new booking cancellation and existing booking cancellation
+  const handleCancelBooking = async () => {
+    try {
+      // If we have a booking ID, this is an existing booking - use PATCH API
+      if (bookingId) {
+        const confirmCancel = window.confirm(
+          'Are you sure you want to cancel this booking? This action cannot be undone.'
+        );
+        
+        if (!confirmCancel) {
+          return;
+        }
+
+        setSubmitting(true);
+        
+        try {
+          const result = await cancelExistingBooking(bookingId);
+          
+          alert('Booking cancelled successfully');
+          
+          // Navigate to bookings page
+          navigate('/booking');
+          
+        } catch (error) {
+          alert(`Failed to cancel booking: ${error.message}`);
+        } finally {
+          setSubmitting(false);
+        }
+        
+      } else {
+        // This is a new booking creation - just cancel the process
+        const confirmCancel = window.confirm(
+          'Are you sure you want to cancel this booking? All entered information will be lost.'
+        );
+        
+        if (confirmCancel) {
+          // Clear any pending booking data
+          localStorage.removeItem('pendingBooking');
+          
+          // Reset form data
+          setFormData({
+            date: '',
+            time: '',
+            serviceType: '',
+            customServiceDescription: '',
+            firstName: '',
+            lastName: '',
+            email: '',
+            phone: '',
+            address: '',
+            city: '',
+            state: '',
+            zipCode: ''
+          });
+          
+          // Reset to first step
+          setCurrentStep(1);
+          
+          // Navigate back to the provider's detail page or previous page
+          if (provider && provider.id) {
+            navigate(`/provider/${provider.id}`);
+          } else if (id) {
+            navigate(`/provider/${id}`);
+          } else {
+            // Fallback: go back to previous page
+            navigate(-1);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error cancelling booking:', error);
+      // Fallback navigation if there's an error
+      try {
+        navigate(-1);
+      } catch (navError) {
+        console.error('Navigation error:', navError);
+        // Last resort: reload the page or go to home
+        window.location.href = '/';
+      }
+    }
+  };
+  
   // Fetch available services from API when provider is loaded
   useEffect(() => {
     const loadServices = async () => {
@@ -99,59 +242,18 @@ const BookingPage = () => {
           return;
         }
         
-        // Try multiple endpoints to see which one works
-        const endpoints = [
-          `http://localhost:5000/api/services/professional/${professionalId}`,
-          `http://localhost:5000/api/services?professionalId=${professionalId}`,
-          `http://localhost:5000/api/professionals/${professionalId}/services`
-        ];
+        // Use the updated function to fetch and filter services
+        const servicesData = await fetchProfessionalServicesLocal(professionalId);
         
-        let servicesData = null;
-        let workingEndpoint = null;
+        console.log('Services data received:', servicesData);
         
-        for (const endpoint of endpoints) {
-          try {
-            console.log(`Trying endpoint: ${endpoint}`);
-            const response = await fetch(endpoint);
-            console.log(`Response status: ${response.status}`);
-            
-            if (response.ok) {
-              servicesData = await response.json();
-              workingEndpoint = endpoint;
-              console.log(`SUCCESS with endpoint: ${endpoint}`);
-              console.log('Services response:', servicesData);
-              break;
-            } else {
-              const errorText = await response.text();
-              console.log(`Failed with status ${response.status}:`, errorText);
-            }
-          } catch (err) {
-            console.log(`Error with endpoint ${endpoint}:`, err.message);
-          }
-        }
-        
-        if (!servicesData) {
-          console.error('All service endpoints failed - using fallback services');
+        if (servicesData.success && Array.isArray(servicesData.services)) {
+          setServices(servicesData.services);
+          console.log(`Successfully loaded ${servicesData.services.length} services`);
+        } else {
+          console.warn('No services found or invalid format');
           setServices([]);
-          return;
         }
-        
-        // Handle different response formats
-        let servicesList = servicesData;
-        if (servicesData.services) {
-          servicesList = servicesData.services;
-        } else if (servicesData.data) {
-          servicesList = servicesData.data;
-        }
-        
-        console.log('Final services list:', servicesList);
-        console.log('Number of services:', servicesList?.length || 0);
-        
-        if (servicesList && servicesList.length > 0) {
-          console.log('Sample service structure:', servicesList[0]);
-        }
-        
-        setServices(servicesList || []);
         
       } catch (err) {
         console.error('Failed to load professional services:', err);
@@ -248,109 +350,26 @@ const BookingPage = () => {
     }));
   };
   
-  // Generate service type options from professional's services or fallback
+  // Generate service type options from professional's services - DATABASE ONLY
   const getServiceOptions = () => {
-    // First priority: Use services from professional-specific API
+    // Only use services from the main services API filtered by professional
     if (services && services.length > 0) {
-      console.log('Using professional-specific services from API');
+      console.log('Using professional services from main API');
       return services.map(service => ({
-        id: service.id || service._id,
-        name: service.name || service.title || service.serviceName,
+        id: service._id || service.id,
+        name: service.title, // Use 'title' field from API response
         description: service.description,
-        price: service.price || service.rate
+        price: service.pricing?.amount, // Extract price from pricing object
+        currency: service.pricing?.currency || 'USD',
+        formattedPrice: service.formattedPrice, // Use the formatted price from API
+        category: service.category?.name,
+        duration: service.duration?.estimated // Duration in minutes
       }));
     }
     
-    // Second priority: Check if provider has services array
-    if (provider?.services && provider.services.length > 0) {
-      console.log('Using provider services array');
-      return provider.services.map((service, index) => ({
-        id: `provider-service-${index}`,
-        name: service.name || service,
-        description: service.description
-      }));
-    }
-    
-    // Third priority: Check original provider data for services
-    if (originalProvider?.services && originalProvider.services.length > 0) {
-      console.log('Using original provider services');
-      return originalProvider.services.map((service, index) => ({
-        id: `original-service-${index}`,
-        name: service.name || service,
-        description: service.description
-      }));
-    }
-    
-    // Fallback: Generate profession-based options
-    if (!provider) return [];
-    
-    console.log('Using profession-based fallback services for:', provider.profession);
-    const profession = provider.profession;
-    
-    switch(profession) {
-      case 'Carpenter':
-        return [
-          { id: 'furniture-repair', name: 'Furniture Repair', description: 'Repair and restoration of furniture' },
-          { id: 'custom-woodworking', name: 'Custom Woodworking', description: 'Custom wood projects and crafting' },
-          { id: 'cabinet-installation', name: 'Cabinet Installation', description: 'Kitchen and bathroom cabinet installation' },
-          { id: 'general-carpentry', name: 'General Carpentry', description: 'General carpentry and woodworking services' }
-        ];
-      case 'Plumber':
-        return [
-          { id: 'leak-repair', name: 'Leak Repair', description: 'Fix leaks in pipes, faucets, and fixtures' },
-          { id: 'pipe-installation', name: 'Pipe Installation', description: 'Install new pipes and plumbing systems' },
-          { id: 'drain-cleaning', name: 'Drain Cleaning', description: 'Clear clogged drains and pipes' },
-          { id: 'fixture-installation', name: 'Fixture Installation', description: 'Install toilets, sinks, and other fixtures' }
-        ];
-      case 'Electrician':
-        return [
-          { id: 'wiring-installation', name: 'Wiring Installation', description: 'Install electrical wiring and circuits' },
-          { id: 'lighting-installation', name: 'Lighting Installation', description: 'Install light fixtures and switches' },
-          { id: 'safety-inspection', name: 'Safety Inspection', description: 'Electrical safety inspections and testing' },
-          { id: 'outlet-repair', name: 'Outlet Repair', description: 'Repair and replace electrical outlets' }
-        ];
-      case 'Interior Designer':
-        return [
-          { id: 'design-consultation', name: 'Design Consultation', description: 'Professional interior design consultation' },
-          { id: 'room-redesign', name: 'Room Redesign', description: 'Complete room makeover and redesign' },
-          { id: 'color-scheme', name: 'Color Scheme Planning', description: 'Color palette and scheme design' },
-          { id: 'furniture-selection', name: 'Furniture Selection', description: 'Help choose furniture and decor' }
-        ];
-      case 'Painter':
-        return [
-          { id: 'interior-painting', name: 'Interior Painting', description: 'Paint interior walls and surfaces' },
-          { id: 'exterior-painting', name: 'Exterior Painting', description: 'Paint exterior walls and surfaces' },
-          { id: 'decorative-painting', name: 'Decorative Painting', description: 'Specialty and decorative paint finishes' },
-          { id: 'cabinet-refinishing', name: 'Cabinet Refinishing', description: 'Refinish and paint cabinets' }
-        ];
-      case 'Landscaper':
-        return [
-          { id: 'lawn-maintenance', name: 'Lawn Maintenance', description: 'Regular lawn care and maintenance' },
-          { id: 'garden-design', name: 'Garden Design', description: 'Design and plan garden layouts' },
-          { id: 'irrigation-installation', name: 'Irrigation Installation', description: 'Install sprinkler and irrigation systems' },
-          { id: 'outdoor-renovation', name: 'Outdoor Renovation', description: 'Renovate outdoor spaces and landscapes' }
-        ];
-      case 'HVAC Technician':
-        return [
-          { id: 'system-installation', name: 'System Installation', description: 'Install HVAC systems and equipment' },
-          { id: 'maintenance-repair', name: 'Maintenance & Repair', description: 'Maintain and repair HVAC systems' },
-          { id: 'duct-cleaning', name: 'Duct Cleaning', description: 'Clean air ducts and ventilation systems' },
-          { id: 'system-inspection', name: 'System Inspection', description: 'Inspect and diagnose HVAC issues' }
-        ];
-      case 'Security Specialist':
-        return [
-          { id: 'system-installation', name: 'System Installation', description: 'Install security systems and equipment' },
-          { id: 'camera-setup', name: 'Camera Setup', description: 'Set up security cameras and monitoring' },
-          { id: 'security-assessment', name: 'Security Assessment', description: 'Assess security needs and vulnerabilities' },
-          { id: 'monitoring-setup', name: 'Monitoring Setup', description: 'Set up security monitoring systems' }
-        ];
-      default:
-        return [{ 
-          id: 'standard-service', 
-          name: `Standard ${profession} Service`,
-          description: `General ${profession.toLowerCase()} services`
-        }];
-    }
+    // If no services found in database, return empty array
+    console.log('No services found in database for this professional');
+    return [];
   };
   
   // Next step handler
@@ -718,9 +737,22 @@ const BookingPage = () => {
       </button>
       
       <div className="bg-white rounded-lg shadow-lg p-6">
-        <div className="mb-8">
-          <h1 className="text-2xl font-bold text-textColor">Book an Appointment with {provider.title}</h1>
-          <p className="text-gray-500">{provider.profession} • ${provider.price}/hr • ★ {provider.rating}</p>
+        {/* Header with cancel button */}
+        <div className="mb-8 flex justify-between items-start">
+          <div>
+            <h1 className="text-2xl font-bold text-textColor">Book an Appointment with {provider.title}</h1>
+            <p className="text-gray-500">{provider.profession} • ${provider.price}/hr • ★ {provider.rating}</p>
+          </div>
+          
+          {/* Cancel Button */}
+          <button
+            onClick={handleCancelBooking}
+            className="flex items-center text-red-500 hover:text-red-700 hover:bg-red-50 px-3 py-2 rounded-md transition-colors"
+            title="Cancel booking"
+          >
+            <FaTimes className="mr-2" />
+            Cancel
+          </button>
         </div>
         
         {/* Booking Progress */}
@@ -830,7 +862,12 @@ const BookingPage = () => {
                   className="w-full p-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blueColor"
                 >
                   <option value="">
-                    {loadingServices ? 'Loading professional services...' : 'Select a service'}
+                    {loadingServices 
+                      ? 'Loading professional services...' 
+                      : getServiceOptions().length === 0 
+                        ? 'No services available for this professional'
+                        : 'Select a service'
+                    }
                   </option>
                   {getServiceOptions().map((service) => (
                     <option key={service.id || service.name} value={service.name}>
@@ -839,34 +876,53 @@ const BookingPage = () => {
                       {service.description && ` - ${service.description.substring(0, 50)}${service.description.length > 50 ? '...' : ''}`}
                     </option>
                   ))}
-                  <option value="custom">Custom (describe below)</option>
+                  {/* Only show custom option if no database services available */}
+                  {getServiceOptions().length === 0 && !loadingServices && (
+                    <option value="custom">Custom Service (describe below)</option>
+                  )}
                 </select>
                 
                 {/* Show service source indicator */}
-                {getServiceOptions().length > 0 && (
+                {!loadingServices && (
                   <div className="mt-2 text-xs text-gray-500">
-                    {services.length > 0 ? 
-                      `${services.length} professional services available` :
-                      `${getServiceOptions().length} standard services for ${provider.profession}`
+                    {getServiceOptions().length > 0 ? 
+                      `${getServiceOptions().length} professional services available from database` :
+                      'No services found in database for this professional'
                     }
+                  </div>
+                )}
+                
+                {/* Show message when no services are available */}
+                {getServiceOptions().length === 0 && !loadingServices && (
+                  <div className="mt-2 p-3 bg-yellow-50 border border-yellow-200 rounded-md">
+                    <p className="text-sm text-yellow-800">
+                      <strong>No services available:</strong> This professional hasn't added any services to the database yet. 
+                      You can still book a custom service by selecting the "Custom Service" option above.
+                    </p>
                   </div>
                 )}
               </div>
               
-              {formData.serviceType === 'custom' && (
+              {(formData.serviceType === 'custom' || getServiceOptions().length === 0) && (
                 <div className="mb-6">
                   <label htmlFor="customServiceDescription" className="block text-sm font-medium text-gray-700 mb-1">
-                    Describe Your Service Needs
+                    {getServiceOptions().length === 0 
+                      ? 'Describe Your Service Needs' 
+                      : 'Describe Your Custom Service Needs'
+                    }
                   </label>
                   <textarea
                     id="customServiceDescription"
                     name="customServiceDescription"
                     value={formData.customServiceDescription}
                     onChange={handleInputChange}
-                    required
+                    required={formData.serviceType === 'custom' || getServiceOptions().length === 0}
                     rows="3"
                     className="w-full p-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blueColor"
-                    placeholder="Please describe what service you need..."
+                    placeholder={getServiceOptions().length === 0 
+                      ? 'Since no predefined services are available, please describe what service you need from this professional...'
+                      : 'Please describe what custom service you need...'
+                    }
                   ></textarea>
                 </div>
               )}
@@ -1137,20 +1193,36 @@ const BookingPage = () => {
               <div></div> // Empty div for spacing
             )}
             
-            <button
-              type="submit"
-              disabled={submitting}
-              className={`py-2 px-8 rounded-lg font-semibold ${
-                submitting 
-                  ? 'bg-gray-400 text-gray-600 cursor-not-allowed' 
-                  : 'bg-blueColor text-white hover:bg-blue-600'
-              }`}
-            >
-              {submitting 
-                ? (currentStep < 3 ? 'Loading...' : 'Creating Booking...') 
-                : (currentStep < 3 ? 'Next' : 'Confirm Booking')
-              }
-            </button>
+            <div className="flex gap-3">
+              {/* Cancel button in navigation area */}
+              <button
+                type="button"
+                onClick={handleCancelBooking}
+                disabled={submitting}
+                className={`py-2 px-6 rounded-lg border-2 ${
+                  submitting 
+                    ? 'bg-gray-300 text-gray-500 border-gray-300 cursor-not-allowed' 
+                    : 'bg-white text-red-500 border-red-500 hover:bg-red-50'
+                }`}
+              >
+                {submitting && bookingId ? 'Cancelling...' : 'Cancel'}
+              </button>
+              
+              <button
+                type="submit"
+                disabled={submitting}
+                className={`py-2 px-8 rounded-lg font-semibold ${
+                  submitting 
+                    ? 'bg-gray-400 text-gray-600 cursor-not-allowed' 
+                    : 'bg-blueColor text-white hover:bg-blue-600'
+                }`}
+              >
+                {submitting 
+                  ? (currentStep < 3 ? 'Loading...' : 'Creating Booking...') 
+                  : (currentStep < 3 ? 'Next' : 'Confirm Booking')
+                }
+              </button>
+            </div>
           </div>
         </form>
       </div>

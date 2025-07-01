@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { FaUserAlt, FaRegEnvelope, FaLock, FaTools, FaUserTie, FaHome, FaEye, FaEyeSlash } from 'react-icons/fa'
 import { Link } from 'react-router-dom'
 
@@ -41,6 +41,79 @@ const Register = () => {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [submitSuccess, setSubmitSuccess] = useState(false)
   const [apiError, setApiError] = useState('')
+
+  // State for services from database
+  const [availableServices, setAvailableServices] = useState([])
+  const [servicesLoading, setServicesLoading] = useState(false)
+  const [servicesError, setServicesError] = useState('')
+
+  // Fetch services from database
+  const fetchServices = async () => {
+    try {
+      setServicesLoading(true)
+      setServicesError('')
+      
+      const response = await fetch('http://localhost:5000/api/categories')
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`)
+      }
+      
+      const data = await response.json()
+      console.log('Services/Categories API Response:', data)
+      
+      // Handle different possible response structures
+      let servicesData = []
+      if (Array.isArray(data)) {
+        servicesData = data
+      } else if (data.categories && Array.isArray(data.categories)) {
+        servicesData = data.categories
+      } else if (data.data && Array.isArray(data.data)) {
+        servicesData = data.data
+      } else {
+        console.warn('Unexpected services API response structure:', data)
+        throw new Error('Invalid services data structure')
+      }
+      
+      // Transform services data to get service names
+      const serviceNames = servicesData.map(service => {
+        // Handle different possible service object structures
+        return service.name || service.title || service.category || service
+      }).filter(Boolean) // Remove any null/undefined values
+      
+      // Remove 'All Services' if it exists and sort alphabetically
+      const filteredServices = serviceNames
+        .filter(service => service !== 'All Services')
+        .sort()
+      
+      setAvailableServices(filteredServices)
+      console.log('Processed services:', filteredServices)
+      
+    } catch (err) {
+      console.error('Error fetching services:', err)
+      setServicesError('Failed to load services. Using default list.')
+      
+      // Fallback to default services if API fails
+      setAvailableServices([
+        'Carpentry',
+        'Cleaning', 
+        'Electrical',
+        'HVAC',
+        'Interior Design',
+        'Landscaping',
+        'Painting',
+        'Plumbing',
+        'Security'
+      ])
+    } finally {
+      setServicesLoading(false)
+    }
+  }
+
+  // Fetch services when component mounts
+  useEffect(() => {
+    fetchServices()
+  }, [])
 
   // Handle input changes
   const handleChange = (e) => {
@@ -169,11 +242,6 @@ const Register = () => {
   // API call function
   const registerUser = async (userData) => {
     try {
-      // You may need to adjust this URL based on your backend setup
-      // Common alternatives:
-      // - 'http://localhost:3001/api/auth/register' (if backend runs on different port)
-      // - '/auth/register' (if no /api prefix)
-      // - 'http://localhost:8000/api/auth/register' (different port)
       const apiUrl = 'http://localhost:5000/api/auth/register';
       
       const response = await fetch(apiUrl, {
@@ -587,38 +655,52 @@ const Register = () => {
                   </div>
                   
                   <div className="mb-4">
-                    <label className="block text-textColor mb-2">Services Offered <span className="text-red-500">*</span></label>
-                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                      {[
-                        'Plumbing',
-                        'Electrical', 
-                        'Carpentry',
-                        'Painting',
-                        'HVAC',
-                        'Cleaning',
-                        'Landscaping',
-                        'Roofing',
-                        'Flooring',
-                        'Appliance Repair',
-                        'Pest Control',
-                        'Other'
-                      ].map((service) => (
-                        <div key={service} className="flex items-center">
-                          <input 
-                            type="checkbox"
-                            id={service}
-                            name="services"
-                            value={service}
-                            checked={formData.services.includes(service)}
-                            onChange={handleChange}
-                            className="mr-2"
-                          />
-                          <label htmlFor={service} className="text-sm text-textColor cursor-pointer">
-                            {service}
-                          </label>
+                    <label className="block text-textColor mb-2">
+                      Services Offered <span className="text-red-500">*</span>
+                      {servicesLoading && <span className="text-sm text-[#959595] ml-2">(Loading services...)</span>}
+                    </label>
+                    
+                    {/* Services Error Display */}
+                    {servicesError && (
+                      <div className="mb-3 bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+                        <div className="flex items-center">
+                          <div className="text-yellow-500 mr-2">⚠️</div>
+                          <p className="text-yellow-700 text-sm">{servicesError}</p>
                         </div>
-                      ))}
-                    </div>
+                      </div>
+                    )}
+                    
+                    {/* Services Loading State */}
+                    {servicesLoading ? (
+                      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                        {[1, 2, 3, 4, 5, 6].map((i) => (
+                          <div key={i} className="flex items-center animate-pulse">
+                            <div className="w-4 h-4 bg-gray-200 rounded mr-2"></div>
+                            <div className="h-4 bg-gray-200 rounded flex-1"></div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                        {availableServices.map((service) => (
+                          <div key={service} className="flex items-center">
+                            <input 
+                              type="checkbox"
+                              id={service}
+                              name="services"
+                              value={service}
+                              checked={formData.services.includes(service)}
+                              onChange={handleChange}
+                              className="mr-2"
+                            />
+                            <label htmlFor={service} className="text-sm text-textColor cursor-pointer">
+                              {service}
+                            </label>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    
                     {errors.services && <p className="text-red-500 text-sm mt-1">{errors.services}</p>}
                   </div>
                   

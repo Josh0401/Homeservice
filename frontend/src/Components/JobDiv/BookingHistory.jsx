@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { FaCalendarAlt, FaHistory, FaClock, FaMapMarkerAlt, FaUser, FaTools, FaEllipsisV, FaStar, FaRegStar } from 'react-icons/fa';
+import { FaCalendarAlt, FaHistory, FaClock, FaMapMarkerAlt, FaUser, FaTools, FaEllipsisV, FaStar, FaRegStar, FaSpinner } from 'react-icons/fa';
 import { useUser } from '../../context/UserContext';
 import { useLocation } from 'react-router-dom';
 
@@ -19,6 +19,7 @@ const BookingHistory = () => {
   const [showReviewModal, setShowReviewModal] = useState(false);
   const [showNewBookingAlert, setShowNewBookingAlert] = useState(false);
   const [newBookingId, setNewBookingId] = useState(null);
+  const [cancelling, setCancelling] = useState(null); // Track which booking is being cancelled
 
   // Fetch bookings from API
   const fetchBookings = async () => {
@@ -143,29 +144,60 @@ const BookingHistory = () => {
     return false;
   });
 
-  // Handle booking cancellation
+  // Handle booking cancellation - FIXED TO USE PATCH /status endpoint
   const handleCancelBooking = async () => {
     try {
-      const response = await fetch(`http://localhost:5000/api/bookings/${selectedBooking.id}/cancel`, {
-        method: 'PUT',
+      console.log(`Attempting to cancel booking: ${selectedBooking.id}`);
+      setCancelling(selectedBooking.id);
+      
+      const token = userData?.token || localStorage.getItem('token') || 
+                   localStorage.getItem('authToken') || localStorage.getItem('accessToken');
+      
+      if (!token) {
+        throw new Error('Authentication required to cancel booking');
+      }
+
+      // Use PATCH /status endpoint as specified (FIXED)
+      const response = await fetch(`http://localhost:5000/api/bookings/${selectedBooking.id}/status`, {
+        method: 'PATCH', // Changed from PUT to PATCH
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${userData?.token || localStorage.getItem('token')}`
+          'Authorization': `Bearer ${token}`
         },
-        // credentials: 'include', // Temporarily removed due to CORS issue
         body: JSON.stringify({
-          cancelReason: cancelReason
+          status: 'cancelled',
+          cancelledAt: new Date().toISOString(),
+          cancelledBy: 'client',
+          cancelReason: cancelReason // Include cancel reason if provided
         })
       });
 
+      console.log(`Cancel response status: ${response.status}`);
+
       if (!response.ok) {
-        throw new Error(`Failed to cancel booking: ${response.status}`);
+        let errorMessage = `HTTP error! status: ${response.status}`;
+        try {
+          const errorData = await response.json();
+          errorMessage = errorData.message || errorMessage;
+          console.error('Error response:', errorData);
+        } catch (parseError) {
+          console.warn('Could not parse error response as JSON');
+        }
+        throw new Error(errorMessage);
       }
+
+      const result = await response.json();
+      console.log('Booking cancelled successfully:', result);
 
       // Update local state
       const updatedBookings = bookings.map(booking => 
         booking.id === selectedBooking.id 
-          ? {...booking, status: 'cancelled', cancelReason} 
+          ? {
+              ...booking, 
+              status: 'cancelled', 
+              cancelReason,
+              cancelledAt: new Date().toISOString()
+            } 
           : booking
       );
       
@@ -177,20 +209,28 @@ const BookingHistory = () => {
       alert('Booking cancelled successfully');
     } catch (err) {
       console.error('Error cancelling booking:', err);
-      alert('Failed to cancel booking. Please try again.');
+      alert(`Failed to cancel booking: ${err.message}`);
+    } finally {
+      setCancelling(null);
     }
   };
 
   // Handle submitting a review
   const handleSubmitReview = async () => {
     try {
+      const token = userData?.token || localStorage.getItem('token') || 
+                   localStorage.getItem('authToken') || localStorage.getItem('accessToken');
+      
+      if (!token) {
+        throw new Error('Authentication required to submit review');
+      }
+
       const response = await fetch(`http://localhost:5000/api/bookings/${selectedBooking.id}/review`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${userData?.token || localStorage.getItem('token')}`
+          'Authorization': `Bearer ${token}`
         },
-        // credentials: 'include', // Temporarily removed due to CORS issue
         body: JSON.stringify({
           rating: userRating,
           review: reviewText
@@ -363,114 +403,131 @@ const BookingHistory = () => {
       {/* Bookings List */}
       {filteredBookings.length > 0 ? (
         <div className="space-y-4">
-          {filteredBookings.map(booking => (
-            <div 
-              key={booking.id} 
-              className={`bg-white rounded-lg shadow-sm p-4 border transition-all duration-300 ${
-                booking.id === newBookingId ? 'border-green-500 shadow-md animate-pulse' : ''
-              }`}
-            >
-              <div className="flex flex-col md:flex-row justify-between">
-                <div className="flex-1">
-                  <div className="flex items-start gap-4">
-                    <div className="w-14 h-14 bg-greyIsh-100 rounded-lg flex items-center justify-center text-blueColor">
-                      <FaTools className="text-2xl" />
-                    </div>
-                    <div>
-                      <h3 className="font-semibold text-lg">{booking.serviceTitle}</h3>
-                      <p className="text-greyIsh-500">{booking.providerName}</p>
-                      <span className={`text-xs ${getStatusColor(booking.status)} text-white px-2 py-1 rounded-full inline-block mt-2`}>
-                        {booking.status.charAt(0).toUpperCase() + booking.status.slice(1)}
-                      </span>
-                      {isToday(booking.date) && (booking.status === 'pending' || booking.status === 'accepted') && (
-                        <span className="ml-2 text-xs bg-orange-500 text-white px-2 py-1 rounded-full">
-                          Today
+          {filteredBookings.map(booking => {
+            const isBeingCancelled = cancelling === booking.id;
+            const canCancel = booking.status && !['cancelled', 'completed', 'rejected', 'declined', 'finished'].includes(booking.status.toLowerCase());
+            
+            return (
+              <div 
+                key={booking.id} 
+                className={`bg-white rounded-lg shadow-sm p-4 border transition-all duration-300 ${
+                  booking.id === newBookingId ? 'border-green-500 shadow-md animate-pulse' : ''
+                }`}
+              >
+                <div className="flex flex-col md:flex-row justify-between">
+                  <div className="flex-1">
+                    <div className="flex items-start gap-4">
+                      <div className="w-14 h-14 bg-greyIsh-100 rounded-lg flex items-center justify-center text-blueColor">
+                        <FaTools className="text-2xl" />
+                      </div>
+                      <div>
+                        <h3 className="font-semibold text-lg">{booking.serviceTitle}</h3>
+                        <p className="text-greyIsh-500">{booking.providerName}</p>
+                        <span className={`text-xs ${getStatusColor(booking.status)} text-white px-2 py-1 rounded-full inline-block mt-2`}>
+                          {booking.status.charAt(0).toUpperCase() + booking.status.slice(1)}
                         </span>
-                      )}
-                      {booking.id === newBookingId && (
-                        <span className="ml-2 text-xs bg-green-500 text-white px-2 py-1 rounded-full">
-                          New
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-                
-                <div className="mt-4 md:mt-0 flex flex-col items-end justify-between h-full">
-                  <div className="text-right">
-                    <div className="flex items-center gap-1 text-greyIsh-500 mb-1">
-                      <FaCalendarAlt className="text-blueColor" />
-                      <span>{formatDate(booking.date)}</span>
-                    </div>
-                    <div className="flex items-center gap-1 text-greyIsh-500">
-                      <FaMapMarkerAlt className="text-blueColor" />
-                      <span>{booking.address}</span>
-                    </div>
-                    <div className="flex items-center gap-1 text-greyIsh-500 mt-1">
-                      <FaClock className="text-blueColor" />
-                      <span>{booking.duration} {booking.duration === 1 ? 'hour' : 'hours'}</span>
+                        {isToday(booking.date) && (booking.status === 'pending' || booking.status === 'accepted') && (
+                          <span className="ml-2 text-xs bg-orange-500 text-white px-2 py-1 rounded-full">
+                            Today
+                          </span>
+                        )}
+                        {booking.id === newBookingId && (
+                          <span className="ml-2 text-xs bg-green-500 text-white px-2 py-1 rounded-full">
+                            New
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
                   
-                  <div className="mt-2 flex gap-2 items-center">
-                    {booking.rating && (
-                      <div className="flex items-center">
-                        <StarRating rating={booking.rating} />
+                  <div className="mt-4 md:mt-0 flex flex-col items-end justify-between h-full">
+                    <div className="text-right">
+                      <div className="flex items-center gap-1 text-greyIsh-500 mb-1">
+                        <FaCalendarAlt className="text-blueColor" />
+                        <span>{formatDate(booking.date)}</span>
                       </div>
-                    )}
-                    <div className="relative">
-                      <button 
-                        className="p-2 hover:bg-greyIsh-100 rounded-full"
-                        onClick={() => {
-                          setSelectedBooking(booking);
-                          setShowDetailsModal(true);
-                        }}
-                      >
-                        <FaEllipsisV className="text-greyIsh-500" />
-                      </button>
+                      <div className="flex items-center gap-1 text-greyIsh-500">
+                        <FaMapMarkerAlt className="text-blueColor" />
+                        <span>{booking.address}</span>
+                      </div>
+                      <div className="flex items-center gap-1 text-greyIsh-500 mt-1">
+                        <FaClock className="text-blueColor" />
+                        <span>{booking.duration} {booking.duration === 1 ? 'hour' : 'hours'}</span>
+                      </div>
+                    </div>
+                    
+                    <div className="mt-2 flex gap-2 items-center">
+                      {booking.rating && (
+                        <div className="flex items-center">
+                          <StarRating rating={booking.rating} />
+                        </div>
+                      )}
+                      <div className="relative">
+                        <button 
+                          className="p-2 hover:bg-greyIsh-100 rounded-full"
+                          onClick={() => {
+                            setSelectedBooking(booking);
+                            setShowDetailsModal(true);
+                          }}
+                        >
+                          <FaEllipsisV className="text-greyIsh-500" />
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
-              
-              {/* Action Buttons */}
-              <div className="mt-4 flex gap-3 justify-end">
-                <button 
-                  className="px-3 py-1.5 border border-blueColor text-blueColor rounded hover:bg-blue-50"
-                  onClick={() => {
-                    setSelectedBooking(booking);
-                    setShowDetailsModal(true);
-                  }}
-                >
-                  View Details
-                </button>
                 
-                {(booking.status === 'pending' || booking.status === 'accepted') && (
+                {/* Action Buttons */}
+                <div className="mt-4 flex gap-3 justify-end">
                   <button 
-                    className="px-3 py-1.5 border border-red-500 text-red-500 rounded hover:bg-red-50"
+                    className="px-3 py-1.5 border border-blueColor text-blueColor rounded hover:bg-blue-50"
                     onClick={() => {
                       setSelectedBooking(booking);
-                      setShowCancelModal(true);
+                      setShowDetailsModal(true);
                     }}
                   >
-                    Cancel
+                    View Details
                   </button>
-                )}
-                
-                {booking.status === 'completed' && !booking.rating && (
-                  <button 
-                    className="px-3 py-1.5 bg-blueColor text-white rounded hover:bg-blue-600"
-                    onClick={() => {
-                      setSelectedBooking(booking);
-                      setShowReviewModal(true);
-                    }}
-                  >
-                    Leave Review
-                  </button>
-                )}
+                  
+                  {canCancel && (
+                    <button 
+                      className={`px-3 py-1.5 border rounded font-medium ${
+                        isBeingCancelled
+                          ? 'border-gray-300 text-gray-500 cursor-not-allowed bg-gray-100'
+                          : 'border-red-500 text-red-500 hover:bg-red-50'
+                      }`}
+                      onClick={() => {
+                        setSelectedBooking(booking);
+                        setShowCancelModal(true);
+                      }}
+                      disabled={isBeingCancelled}
+                    >
+                      {isBeingCancelled ? (
+                        <>
+                          <FaSpinner className="inline mr-1 animate-spin" />
+                          Cancelling...
+                        </>
+                      ) : (
+                        'Cancel'
+                      )}
+                    </button>
+                  )}
+                  
+                  {booking.status === 'completed' && !booking.rating && (
+                    <button 
+                      className="px-3 py-1.5 bg-blueColor text-white rounded hover:bg-blue-600"
+                      onClick={() => {
+                        setSelectedBooking(booking);
+                        setShowReviewModal(true);
+                      }}
+                    >
+                      Leave Review
+                    </button>
+                  )}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       ) : (
         <div className="bg-white rounded-lg shadow-sm p-8 text-center">
@@ -686,6 +743,7 @@ const BookingHistory = () => {
                   onChange={(e) => setCancelReason(e.target.value)}
                   className="w-full border rounded-md p-2 h-24"
                   placeholder="Please provide a reason for cancellation..."
+                  disabled={cancelling === selectedBooking.id}
                 ></textarea>
               </div>
               
@@ -697,14 +755,27 @@ const BookingHistory = () => {
                     setSelectedBooking(null);
                     setCancelReason('');
                   }}
+                  disabled={cancelling === selectedBooking.id}
                 >
                   Cancel
                 </button>
                 <button 
-                  className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600"
+                  className={`px-4 py-2 rounded font-medium ${
+                    cancelling === selectedBooking.id
+                      ? 'bg-gray-400 text-gray-600 cursor-not-allowed'
+                      : 'bg-red-500 text-white hover:bg-red-600'
+                  }`}
                   onClick={handleCancelBooking}
+                  disabled={cancelling === selectedBooking.id}
                 >
-                  Confirm Cancellation
+                  {cancelling === selectedBooking.id ? (
+                    <>
+                      <FaSpinner className="inline mr-2 animate-spin" />
+                      Cancelling...
+                    </>
+                  ) : (
+                    'Confirm Cancellation'
+                  )}
                 </button>
               </div>
             </div>
